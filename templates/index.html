@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ResumeTailor — Self-Hosted AI Resume & Cover Letter</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">📄 <strong>ResumeTailor</strong> <span class="tag">self-hosted</span></div>
+    <div id="backend-status" class="backend-status">Detecting local LLM backends…</div>
+  </header>
+
+  <main class="layout">
+    <!-- Left: inputs -->
+    <section class="panel inputs">
+      <h2>1 · Your resume</h2>
+      <div class="upload-row">
+        <label class="file-btn" for="resume-file">Upload .docx / .pdf / .txt</label>
+        <input type="file" id="resume-file" accept=".docx,.pdf,.txt,.md" hidden />
+        <span id="file-name" class="file-name"></span>
+      </div>
+      <textarea id="resume-text" rows="12" placeholder="Paste your resume here, or upload a file above…"></textarea>
+
+      <h2>2 · Job description</h2>
+      <textarea id="job-description" rows="10" placeholder="Paste the full job description / posting here…"></textarea>
+
+      <h2>2b · Job Feed (RSS) <span class="tag opt">optional</span></h2>
+      <div class="rss-row">
+        <input type="text" id="rss-url" placeholder="Paste a job RSS feed URL…" />
+        <button id="rss-load-btn" class="ghost-btn">Load jobs</button>
+      </div>
+      <div id="rss-status" class="hint"></div>
+      <div id="rss-job-list" class="rss-jobs"></div>
+
+      <h2>3 · Settings</h2>
+      <div class="settings">
+        <label>Backend
+          <select id="backend-select"></select>
+        </label>
+        <label>Model
+          <select id="model-select"></select>
+        </label>
+        <label>Creativity (temperature)
+          <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.4" />
+          <span id="temp-value">0.4</span>
+        </label>
+      </div>
+      <div id="remote-api-key-box" class="research-config hidden" style="margin-top:10px">
+        <label>API Key
+          <input type="password" id="remote-api-key" placeholder="Paste your OpenRouter / LM Studio Bionic API key…" />
+        </label>
+        <button id="fetch-models-btn" class="ghost-btn" style="margin-top:6px">Fetch models</button>
+        <span id="models-fetch-status" style="font-size:12px;color:var(--muted)"></span>
+        <p class="hint">Your API key stays in your browser and is sent only to this app's local server. The app passes it to the LLM endpoint for chat requests.</p>
+      </div>
+
+      <h2>4 · Research <span class="tag opt">optional</span></h2>
+      <label>Mode
+        <select id="research-mode" style="width:100%">
+          <option value="">None — no extra research</option>
+          <option value="llm">LLM Knowledge — ask the model about the company</option>
+          <option value="web">Web Search — live search (needs search API key)</option>
+        </select>
+      </label>
+
+      <div id="web-search-config" class="research-config hidden">
+        <label>Search Provider
+          <select id="research-provider">
+            <option value="tavily">Tavily Search</option>
+            <option value="brave">Brave Search</option>
+            <option value="serpapi">SerpAPI</option>
+          </select>
+        </label>
+        <label>Search API Key
+          <input type="password" id="research-api-key" placeholder="Paste your search API key…" />
+        </label>
+      </div>
+      <div id="llm-research-note" class="hint hidden">
+        The LLM will be asked to describe the company using its training knowledge (no live web access). Best for well-known companies.
+      </div>
+
+      <h2>5 · MCP Tools <span class="tag opt">optional</span></h2>
+      <label class="toggle-row">
+        <input type="checkbox" id="mcp-enabled" />
+        <span>Use MCP server tools during generation</span>
+      </label>
+      <div id="mcp-config" class="research-config hidden">
+        <p class="hint">Add MCP servers (stdio command or HTTP URL). Their tools become available to the LLM (e.g. web search, URL fetch, file access).</p>
+        <div class="mcp-add-row">
+          <input type="text" id="mcp-name" placeholder="Name (e.g. web)" />
+          <select id="mcp-type">
+            <option value="http">HTTP</option>
+            <option value="stdio">stdio</option>
+          </select>
+        </div>
+        <input type="text" id="mcp-url" placeholder="HTTP URL or stdio command (e.g. npx -y @modelcontextprotocol/server-filesystem /tmp)" />
+        <button id="mcp-add-btn" class="ghost-btn">+ Add server</button>
+        <div id="mcp-server-list" class="mcp-server-list"></div>
+        <button id="mcp-list-tools-btn" class="ghost-btn">List available tools</button>
+        <div id="mcp-tools" class="mcp-tools"></div>
+      </div>
+
+      <button id="generate-btn" class="generate-btn">✨ Generate tailored resume & cover letter</button>
+      <div id="status" class="status"></div>
+    </section>
+
+    <!-- Right: outputs -->
+    <section class="panel outputs">
+      <div class="tabs">
+        <button class="tab active" data-tab="resume">Tailored Resume</button>
+        <button class="tab" data-tab="cover">Cover Letter</button>
+      </div>
+
+      <div class="output-toolbar">
+        <button id="copy-btn" class="ghost-btn">Copy</button>
+        <button id="download-docx" class="ghost-btn">Download .docx</button>
+        <button id="download-txt" class="ghost-btn">Download .txt</button>
+      </div>
+
+      <div id="output-resume" class="output-content active"></div>
+      <div id="output-cover" class="output-content"></div>
+
+      <div id="empty-state" class="empty-state">
+        Your tailored resume and cover letter will appear here.
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

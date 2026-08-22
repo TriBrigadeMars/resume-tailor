@@ -1,0 +1,56 @@
+name: Build Windows executables
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - name: ResumeTailor (web app)
+            spec: ResumeTailor.spec
+            dist: dist
+            artifact: ResumeTailor.exe
+          - name: ResumeTailor-Desktop
+            spec: Desktop.spec
+            dist: dist-desktop
+            artifact: ResumeTailor-Desktop.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: |
+          python -m PyInstaller --clean --noconfirm --distpath ${{ matrix.target.dist }} ${{ matrix.target.spec }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target.artifact }}
+          path: ${{ matrix.target.dist }}/${{ matrix.target.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.exe
+          generate_release_notes: true

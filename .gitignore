@@ -1,0 +1,51 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Build artifacts (PyInstaller) ----
+build/
+dist/
+dist-desktop/
+*.spec.bak
+*.manifest
+
+# ---- Logs & temp ----
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Secrets — NEVER commit API keys or tokens ----
+# OpenRouter / LM Studio / search provider keys live only in the browser
+# (localStorage) and are never written to disk by the app. If you keep any
+# key files locally, make sure they are ignored here:
+*.key
+*API Key*.txt
+*api_key*.txt
+.env
+.env.local
+credentials.json
+secrets.json
+
+# ---- Editors / IDEs ----
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- OS junk ----
+nul
+desktop.ini

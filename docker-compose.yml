@@ -1,0 +1,28 @@
+# ResumeTailor — launch a container that talks to Ollama / LM Studio on the host.
+#
+# Usage:
+#   docker compose up --build
+#   then open http://localhost:8000
+#
+# The app reaches the host's Ollama (11434) and LM Studio (1234) through
+# host.docker.internal. If your backend runs elsewhere, override the
+# *_BASE_URL environment variables below.
+
+services:
+  resume-tailor:
+    build: .
+    image: resume-tailor:latest
+    container_name: resume-tailor
+    ports:
+      - "8000:8000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8000"
+      AUTO_OPEN_BROWSER: "0"
+      # Point at the Docker host's local LLM backends:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LMSTUDIO_BASE_URL: http://host.docker.internal:1234
+    extra_hosts:
+      # Makes host.docker.internal resolve to the host on Linux.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
