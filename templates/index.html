@@ -106,6 +106,20 @@
       <div id="status" class="status"></div>
     </section>
 
+    <!-- Middle: job opportunities from the Hermes cron feed -->
+    <section class="panel jobs">
+      <div class="jobs-header">
+        <h2>Job Opportunities <span class="tag">cron feed</span></h2>
+        <button id="cron-refresh-btn" class="ghost-btn">↻ Refresh</button>
+      </div>
+      <div id="cron-status" class="hint"></div>
+      <div id="cron-job-list" class="rss-jobs"></div>
+      <p class="hint" style="margin-top:10px">
+        Loaded from the most recent Job Hunting cron job output. Click a job to
+        load it into the job description, then Generate.
+      </p>
+    </section>
+
     <!-- Right: outputs -->
     <section class="panel outputs">
       <div class="tabs">

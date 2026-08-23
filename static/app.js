@@ -265,10 +265,61 @@ function buildJobDescription(job) {
   const parts = [];
   if (job.title) parts.push(`Job Title: ${job.title}`);
   if (job.company) parts.push(`Company: ${job.company}`);
-  if (job.link) parts.push(`Link: ${job.link}`);
+  if (job.link || job.url) parts.push(`Link: ${job.link || job.url}`);
+  if (job.location) parts.push(`Location: ${job.location}`);
   if (job.description) parts.push(`\nDescription:\n${job.description}`);
   $("job-description").value = parts.join("\n");
 }
+
+/* ---------- Job Opportunities (Hermes cron feed) ---------- */
+const $cronStatus = $("cron-status");
+const $cronJobList = $("cron-job-list");
+
+async function loadCronJobs() {
+  $cronStatus.textContent = "Loading job opportunities…";
+  try {
+    const res = await fetch("/api/cron-jobs");
+    const data = await res.json();
+    const jobs = data.jobs || [];
+    if (!jobs.length) {
+      $cronStatus.textContent = data.error || "No job opportunities in the cron feed yet.";
+      $cronJobList.innerHTML = "";
+      return;
+    }
+    $cronStatus.textContent = `${jobs.length} job opportunities from the latest cron run.`;
+    renderCronJobs(jobs);
+  } catch (err) {
+    $cronStatus.textContent = "Failed to load cron jobs: " + err.message;
+  }
+}
+
+function renderCronJobs(jobs) {
+  $cronJobList.innerHTML = "";
+  jobs.forEach((job) => {
+    const div = document.createElement("div");
+    div.className = "rss-job";
+    const title = job.title || "Untitled";
+    const company = job.company || "";
+    const loc = job.location || "";
+    const src = job.source || "";
+    div.innerHTML =
+      `<div class="jt">${escapeHtml(title)}</div>` +
+      (company ? `<div class="jc">${escapeHtml(company)}${loc ? " · " + escapeHtml(loc) : ""}</div>` : (loc ? `<div class="jc">${escapeHtml(loc)}</div>` : "")) +
+      (src ? `<span class="jsrc">${escapeHtml(src)}</span>` : "");
+    div.title = "Click to load this job into the generator";
+    div.addEventListener("click", () => useCronJob(job));
+    $cronJobList.appendChild(div);
+  });
+}
+
+function useCronJob(job) {
+  buildJobDescription(job);
+  setStatus(`✓ Loaded "${job.title || "job"}" into the job description. Click Generate.`, "ok");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+$("cron-refresh-btn").addEventListener("click", loadCronJobs);
+loadCronJobs();
 
 /* ---------- Research settings ---------- */
 const LSKEY_RESEARCH_MODE = "RT_research_mode";

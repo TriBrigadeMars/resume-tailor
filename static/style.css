@@ -52,11 +52,16 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 20px;
   padding: 24px 28px;
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
+}
+
+@media (max-width: 1200px) {
+  .layout { grid-template-columns: 1fr 1fr; }
+  .jobs { grid-column: 1 / -1; }
 }
 
 @media (max-width: 900px) {
@@ -267,7 +272,20 @@ select {
   padding: 8px 12px;
   font-size: 13px;
 }
+.jobs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.jobs-header h2 { margin: 0; }
 .rss-jobs { margin-top: 8px; max-height: 220px; overflow-y: auto; }
+.jobs .rss-jobs { max-height: 70vh; }
+.jobs .rss-job .jsrc {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--accent-2);
+  margin-top: 4px;
+}
 .rss-job {
   background: var(--panel-2);
   border: 1px solid var(--border);

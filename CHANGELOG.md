@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New **Job Opportunities** column that displays jobs from the most recent
+  Hermes cron job output (JSON feed), with click-to-load into the generator.
+- New `GET /api/cron-jobs` endpoint that reads the Hermes cron feed.
+- New `JOB_FEED_FILE` environment variable to configure the feed path.
+- `job_hunting_feed.py` Hermes cron script that writes an accumulated JSON feed
+  of job postings (reuses the consolidated job monitor sources).
+
 ## [1.0.0] - 2026-08-22
 
 ### Added

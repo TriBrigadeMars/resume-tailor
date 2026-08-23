@@ -29,6 +29,9 @@ opportunities in-app.
   stdio servers) while generating.
 - **RSS job feed** — paste a job RSS/Atom feed URL, load the opportunities
   in-app, and generate a tailored resume + cover letter for a selected role.
+- **Cron job feed** — a dedicated column displays job opportunities from the
+  most recent Hermes cron job output (JSON feed); click a job to load it and
+  generate a tailored resume + cover letter.
 - **Desktop app** (Windows) — native window + system tray, no browser needed.
 
 ---
@@ -129,6 +132,7 @@ resume-tailor/
 | POST   | `/api/extract`    | Extract text from an uploaded resume file     |
 | POST   | `/api/mcp/tools`  | List tools from configured MCP servers        |
 | GET    | `/api/rss`        | Fetch + parse a job RSS feed (`?url=`)        |
+| GET    | `/api/cron-jobs`  | Read the latest Hermes cron job feed (JSON)   |
 | POST   | `/download/<type>`| Download output as `.docx` or `.txt`          |
 
 ---
@@ -144,6 +148,7 @@ resume-tailor/
 | `LMSTUDIO_BASE_URL`  | `http://localhost:1234`  | LM Studio / Bionic endpoint            |
 | `MCP_SERVERS`        | `[]`                  | JSON list of MCP servers                  |
 | `RSS_FEED_URL`       | *(none)*              | Optional default RSS feed URL (prefilled in UI) |
+| `JOB_FEED_FILE`      | `…/hermes/cron/output/job_hunting/latest.json` | Path to the Hermes cron job JSON feed |
 
 See [`.env.example`](.env.example) for a template.
 

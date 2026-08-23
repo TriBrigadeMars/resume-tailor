@@ -118,3 +118,13 @@ def test_generate_requires_fields(client):
     resp = client.post("/api/generate", json={"resume_text": "", "job_description": ""})
     assert resp.status_code == 400
     assert "error" in resp.get_json()
+
+
+def test_cron_jobs_endpoint(client):
+    """The cron-jobs endpoint returns a jobs array (empty if no feed yet)."""
+    resp = client.get("/api/cron-jobs")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "jobs" in data
+    assert isinstance(data["jobs"], list)
+    assert "feed_file" in data

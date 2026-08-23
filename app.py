@@ -213,6 +213,32 @@ def api_rss():
     return jsonify({"jobs": jobs})
 
 
+@app.route("/api/cron-jobs")
+def api_cron_jobs():
+    """Read the most recent Job Hunting cron feed (JSON) and return its jobs.
+
+    The feed file is produced by the Hermes cron script job_hunting_feed.py and
+    its path can be overridden with the JOB_FEED_FILE environment variable.
+    """
+    import json as _json
+
+    feed_file = os.environ.get(
+        "JOB_FEED_FILE",
+        os.path.join(
+            os.path.expanduser("~"), "AppData", "Local", "hermes",
+            "cron", "output", "job_hunting", "latest.json",
+        ),
+    )
+    if not os.path.exists(feed_file):
+        return jsonify({"jobs": [], "feed_file": feed_file, "error": None})
+    try:
+        with open(feed_file, "r", encoding="utf-8") as f:
+            jobs = _json.load(f)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"jobs": [], "feed_file": feed_file, "error": f"Could not read feed: {exc}"}), 500
+    return jsonify({"jobs": jobs, "feed_file": feed_file, "error": None})
+
+
 @app.route("/api/mcp/tools", methods=["POST"])
 def api_mcp_tools():
     """Connect to MCP servers and list available tools."""
