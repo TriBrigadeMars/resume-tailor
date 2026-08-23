@@ -142,6 +142,24 @@
     </section>
   </main>
 
+  <!-- Job preview modal -->
+  <div id="preview-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="preview-title">Job Preview</h3>
+        <button id="preview-close" class="ghost-btn">✕</button>
+      </div>
+      <div class="modal-meta">
+        <span id="preview-source"></span>
+        <a id="preview-url" href="#" target="_blank" rel="noopener"></a>
+      </div>
+      <div id="preview-body" class="modal-body">Loading preview…</div>
+      <div class="modal-footer">
+        <button id="preview-open" class="ghost-btn">↗ Open in browser</button>
+      </div>
+    </div>
+  </div>
+
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

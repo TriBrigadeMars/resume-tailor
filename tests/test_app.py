@@ -128,3 +128,14 @@ def test_cron_jobs_endpoint(client):
     assert "jobs" in data
     assert isinstance(data["jobs"], list)
     assert "feed_file" in data
+
+
+def test_preview_rejects_invalid_url(client):
+    """The preview endpoint rejects non-http(s) URLs."""
+    resp = client.get("/api/preview", query_string={"url": "file:///etc/passwd"})
+    assert resp.status_code == 400
+
+
+def test_preview_rejects_missing_url(client):
+    resp = client.get("/api/preview")
+    assert resp.status_code == 400

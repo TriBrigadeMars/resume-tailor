@@ -239,6 +239,84 @@ def api_cron_jobs():
     return jsonify({"jobs": jobs, "feed_file": feed_file, "error": None})
 
 
+def _html_to_text(html: str) -> str:
+    """Strip scripts/styles/nav and extract readable text from a page."""
+    import html as _html_mod
+
+    # Drop non-content blocks (scripts, styles, nav, etc.).
+    html = re.sub(
+        r"<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\\1>",
+        " ", html, flags=re.IGNORECASE | re.DOTALL,
+    )
+    # Defensive: remove any remaining style/script blocks.
+    html = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+    # Turn block tags into newlines.
+    html = re.sub(
+        r"<(br|/p|/div|/li|/h[1-6]|/tr|/section|/article)[^>]*>", "\n", html,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = _html_mod.unescape(text)
+    text = re.sub(r"[ \t]+", " ", text)
+
+    # Drop lines that are clearly CSS or JavaScript noise.
+    lines = []
+    for line in text.split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        # CSS rules / styled-components noise (e.g. .cls{...} or @media{...}).
+        if re.match(r"^[.#][A-Za-z][\w-]*\{", s):
+            continue
+        if re.match(r"^@media", s):
+            continue
+        if "/*!sc*/" in s or re.search(r"^[.#][A-Za-z][\w-]*\{.*\}", s):
+            continue
+        # JavaScript noise.
+        if re.search(r"function\s*\(|=>|window\.|document\.|\bvar\s+\w+\s*=", s):
+            continue
+        # Very long single-line CSS (minified) that still contains braces.
+        if "{" in s and "}" in s and ";" in s:
+            continue
+        lines.append(s)
+    return "\n".join(lines)[:20000]
+
+
+@app.route("/api/preview")
+def api_preview():
+    """Fetch a page server-side and return a clean text preview.
+
+    Used by the Job Opportunities preview modal so users can read a posting
+    before opening it in the browser (works even when the site blocks iframes).
+    """
+    import urllib.request
+    import urllib.error
+
+    url = request.args.get("url", "").strip()
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "Invalid URL."}), 400
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+            final_url = resp.geturl()
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        return jsonify({"error": f"Could not fetch page: {exc}"}), 502
+
+    title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    title = re.sub(r"\s+", " ", title_m.group(1)).strip() if title_m else url
+
+    return jsonify({"title": title, "text": _html_to_text(html)[:20000], "url": final_url})
+
+
 @app.route("/api/mcp/tools", methods=["POST"])
 def api_mcp_tools():
     """Connect to MCP servers and list available tools."""

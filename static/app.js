@@ -313,13 +313,62 @@ function renderCronJobs(jobs) {
 }
 
 function useCronJob(job) {
-  if (job.url) {
-    window.open(job.url, "_blank");
-    setStatus(`Opened "${job.title || "job"}" in your browser.`, "ok");
-  } else {
-    setStatus("This job has no URL to open.", "error");
+  if (!job.url) {
+    setStatus("This job has no URL to preview.", "error");
+    return;
   }
+  openPreview(job);
 }
+
+/* ---------- Job preview modal ---------- */
+const $previewModal = $("preview-modal");
+const $previewTitle = $("preview-title");
+const $previewSource = $("preview-source");
+const $previewUrl = $("preview-url");
+const $previewBody = $("preview-body");
+let previewJobUrl = "";
+
+function openPreview(job) {
+  previewJobUrl = job.url;
+  $previewTitle.textContent = job.title || "Job Preview";
+  $previewSource.textContent = job.source ? `Source: ${job.source}` : "";
+  $previewUrl.textContent = job.url;
+  $previewUrl.href = job.url;
+  $previewBody.textContent = "Loading preview…";
+  $previewModal.classList.remove("hidden");
+
+  fetch(`/api/preview?url=${encodeURIComponent(job.url)}`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.error) {
+        $previewBody.textContent = "Preview unavailable: " + data.error;
+        return;
+      }
+      if (data.title) $previewTitle.textContent = data.title;
+      $previewBody.textContent = data.text || "(No readable text found on this page.)";
+    })
+    .catch((err) => {
+      $previewBody.textContent = "Preview failed: " + err.message;
+    });
+}
+
+function closePreview() {
+  $previewModal.classList.add("hidden");
+}
+
+$("preview-close").addEventListener("click", closePreview);
+$("preview-open").addEventListener("click", () => {
+  if (previewJobUrl) {
+    window.open(previewJobUrl, "_blank");
+    closePreview();
+  }
+});
+$previewModal.addEventListener("click", (e) => {
+  if (e.target === $previewModal) closePreview();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePreview();
+});
 
 $("cron-refresh-btn").addEventListener("click", loadCronJobs);
 loadCronJobs();
