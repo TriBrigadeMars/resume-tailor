@@ -306,16 +306,19 @@ function renderCronJobs(jobs) {
       `<div class="jt">${escapeHtml(title)}</div>` +
       (company ? `<div class="jc">${escapeHtml(company)}${loc ? " · " + escapeHtml(loc) : ""}</div>` : (loc ? `<div class="jc">${escapeHtml(loc)}</div>` : "")) +
       (src ? `<span class="jsrc">${escapeHtml(src)}</span>` : "");
-    div.title = "Click to load this job into the generator";
+    div.title = "Click to open this job in your browser";
     div.addEventListener("click", () => useCronJob(job));
     $cronJobList.appendChild(div);
   });
 }
 
 function useCronJob(job) {
-  buildJobDescription(job);
-  setStatus(`✓ Loaded "${job.title || "job"}" into the job description. Click Generate.`, "ok");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (job.url) {
+    window.open(job.url, "_blank");
+    setStatus(`Opened "${job.title || "job"}" in your browser.`, "ok");
+  } else {
+    setStatus("This job has no URL to open.", "error");
+  }
 }
 
 $("cron-refresh-btn").addEventListener("click", loadCronJobs);
