@@ -139,3 +139,153 @@ def test_preview_rejects_invalid_url(client):
 def test_preview_rejects_missing_url(client):
     resp = client.get("/api/preview")
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 hardening regression tests
+# ---------------------------------------------------------------------------
+
+
+def _generate_payload(**overrides):
+    payload = {
+        "resume_text": "John Doe\nSoftware Engineer",
+        "job_description": "Python Developer",
+        "backend": "ollama",
+        "model": "some-model",
+        "temperature": 0.4,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_invalid_temperature_returns_400(client):
+    resp = client.post("/api/generate", json=_generate_payload(temperature="abc"))
+    assert resp.status_code == 400
+    assert "temperature" in resp.get_json()["error"]
+
+
+def test_out_of_range_temperature_returns_400(client):
+    resp = client.post("/api/generate", json=_generate_payload(temperature=3.0))
+    assert resp.status_code == 400
+    assert "temperature" in resp.get_json()["error"]
+
+
+def test_nonfinite_temperature_returns_400(client):
+    resp = client.post("/api/generate", json=_generate_payload(temperature="nan"))
+    assert resp.status_code == 400
+
+
+def test_rss_rejects_localhost():
+    import rss
+
+    with pytest.raises(RuntimeError):
+        rss.fetch_feed("http://localhost:8000/feed")
+
+
+def test_rss_rejects_private_ip():
+    import rss
+
+    with pytest.raises(RuntimeError):
+        rss.fetch_feed("http://192.168.1.1/feed")
+
+
+def test_client_mcp_servers_ignored_when_disabled(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setenv("ALLOW_CLIENT_MCP_SERVERS", "0")
+    monkeypatch.setattr(
+        app_module.mcp_integration, "get_servers_from_env", lambda: []
+    )
+    client_sent = [{"name": "evil", "type": "stdio", "command": "rm", "args": ["-rf", "/"]}]
+    resolved = app_module._resolve_mcp_servers(client_sent)
+    assert resolved == []  # client servers ignored
+
+
+def test_client_mcp_servers_allowed_when_enabled(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setenv("ALLOW_CLIENT_MCP_SERVERS", "1")
+    monkeypatch.setattr(
+        app_module.mcp_integration, "get_servers_from_env", lambda: []
+    )
+    client_sent = [{"name": "web", "type": "http", "url": "http://x/mcp"}]
+    resolved = app_module._resolve_mcp_servers(client_sent)
+    assert resolved == client_sent
+
+
+def test_server_mcp_config_used_when_client_disabled(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setenv("ALLOW_CLIENT_MCP_SERVERS", "0")
+    env_servers = [{"name": "env", "type": "http", "url": "http://env/mcp"}]
+    monkeypatch.setattr(
+        app_module.mcp_integration, "get_servers_from_env", lambda: env_servers
+    )
+    resolved = app_module._resolve_mcp_servers([])
+    assert resolved == env_servers
+
+
+def test_chat_with_tools_requires_api_key():
+    import llm
+
+    with pytest.raises(RuntimeError) as exc:
+        llm.chat_with_tools(
+            "openrouter", "some-model",
+            [{"role": "user", "content": "hi"}],
+            [{"type": "function", "function": {"name": "f", "parameters": {}}}],
+        )
+    assert "API key" in str(exc.value)
+
+
+def test_numbered_list_docx_conversion():
+    import docgen
+
+    doc = docgen.markdown_to_docx("1. First item\n2) Second item\n10. Third item")
+    styles = [p.style.name for p in doc.paragraphs]
+    assert all(s == "List Number" for s in styles)
+
+
+def test_markdown_to_text_strips_markers():
+    import docgen
+
+    text = docgen.markdown_to_text("## Heading\n- bullet\n1. item\nplain")
+    assert "##" not in text
+    assert "- bullet" not in text
+    assert "1. item" in text
+    assert "plain" in text
+
+
+def test_txt_download_uses_shared_helper(client):
+    import docgen
+
+    resp = client.post(
+        "/download/resume",
+        json={"content": "## Title\n- bullet\n1. item", "format": "txt"},
+    )
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert body == docgen.markdown_to_text("## Title\n- bullet\n1. item")
+
+
+def test_research_not_in_system_prompt():
+    import app as app_module
+
+    sys_resume = app_module._resume_system()
+    sys_cover = app_module._cover_system()
+    # Research content is never embedded in the system prompt (only reference
+    # material is placed in the user prompt).
+    assert "COMPANY RESEARCH" not in sys_resume
+    assert "COMPANY RESEARCH" not in sys_cover
+    assert "</COMPANY RESEARCH>" not in sys_resume
+
+
+def test_research_appears_once_in_user_prompt():
+    import app as app_module
+
+    prompt = app_module._build_user_prompt(
+        "job", "resume", "RESEARCH_TEXT", task="resume"
+    )
+    assert prompt.count("RESEARCH_TEXT") == 1
+    assert "<COMPANY RESEARCH>" in prompt
+    assert "<JOB DESCRIPTION>" in prompt
+    assert "<CANDIDATE RESUME>" in prompt

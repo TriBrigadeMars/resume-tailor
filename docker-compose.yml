@@ -13,8 +13,11 @@ services:
     build: .
     image: resume-tailor:latest
     container_name: resume-tailor
+    # Loopback-only by default: the app is reachable only on this machine.
+    # To allow LAN access, change this to "8000:8000" (and understand that the
+    # app will be exposed on your network without authentication).
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       HOST: 0.0.0.0
       PORT: "8000"

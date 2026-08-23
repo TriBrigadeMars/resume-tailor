@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Client-supplied MCP server config is disabled by default; only
+  `MCP_SERVERS` env config is used unless `ALLOW_CLIENT_MCP_SERVERS=1` is set
+  (the trusted local desktop app enables it).
+- Docker Compose now publishes the port loopback-only
+  (`127.0.0.1:8000:8000`) by default.
+- RSS fetching hardened against SSRF: rejects localhost/private/link-local/
+  multicast/reserved destinations, validates every redirect, and enforces
+  timeout, redirect, and size limits.
+- Research/resume/job text are treated as untrusted model context: research is
+  removed from the system prompt, appears once in the user prompt, and the
+  model is told to ignore instructions inside the input material.
+- Generation input is validated: temperature is range-checked (0.0–2.0,
+  rejects NaN/inf), and resume/job lengths are capped.
+- Remote API keys are no longer persisted to `localStorage`; they now use
+  `sessionStorage` and legacy keys are removed on load.
+
 ### Added
 - New **Job Opportunities** column that displays jobs from the most recent
   Hermes cron job output (JSON feed), with click-to-load into the generator.

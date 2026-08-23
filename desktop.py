@@ -88,7 +88,8 @@ class Api:
                 default_ext = ".docx"
                 filetypes = [("Word Document", "*.docx")]
             else:
-                data = content.encode("utf-8")
+                import docgen
+                data = docgen.markdown_to_text(content).encode("utf-8")
                 default_ext = ".txt"
                 filetypes = [("Text File", "*.txt")]
         except Exception as exc:  # noqa: BLE001
@@ -166,10 +167,15 @@ class ResumeTailorDesktop:
     # ---- Flask backend ----
 
     def _start_flask(self) -> None:
-        """Run the Flask app, overriding env so it doesn't open a browser."""
+        """Run the Flask app, overriding env so it doesn't open a browser.
+
+        The desktop app binds to loopback and is a trusted local application, so
+        it explicitly allows browser-supplied MCP server configuration.
+        """
         os.environ["AUTO_OPEN_BROWSER"] = "0"
         os.environ["HOST"] = "127.0.0.1"
         os.environ["PORT"] = str(self.port)
+        os.environ["ALLOW_CLIENT_MCP_SERVERS"] = "1"
         try:
             app.app.run(host="127.0.0.1", port=self.port, debug=False)
         except Exception as exc:  # noqa: BLE001

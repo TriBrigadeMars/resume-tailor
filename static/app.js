@@ -11,6 +11,16 @@ const state = {
   activeTab: "resume",
 };
 
+// Secrets (API keys) must not persist across sessions. Migrate any legacy
+// keys out of localStorage (which survives restarts) into sessionStorage
+// (which does not), then drop the old keys entirely.
+const SECRET_KEYS = ["RT_remote_api_key", "RT_search_api_key"];
+SECRET_KEYS.forEach((k) => {
+  const legacy = localStorage.getItem(k);
+  if (legacy) sessionStorage.setItem(k, legacy);
+  localStorage.removeItem(k);
+});
+
 /* ---------- Backend detection ---------- */
 async function loadBackends() {
   const statusEl = $("backend-status");
@@ -74,7 +84,7 @@ function onBackendChange() {
   const keyBox = $("remote-api-key-box");
   if (backend.needs_api_key) {
     keyBox.classList.remove("hidden");
-    const savedApiKey = localStorage.getItem("RT_remote_api_key") || "";
+    const savedApiKey = sessionStorage.getItem("RT_remote_api_key") || "";
     $("remote-api-key").value = savedApiKey;
   } else {
     keyBox.classList.add("hidden");
@@ -121,7 +131,7 @@ $("fetch-models-btn").addEventListener("click", async () => {
     $("models-fetch-status").textContent = "Enter an API key first.";
     return;
   }
-  localStorage.setItem("RT_remote_api_key", apiKey);
+  sessionStorage.setItem("RT_remote_api_key", apiKey);
   $("models-fetch-status").textContent = "Fetching…";
   $("fetch-models-btn").disabled = true;
 
@@ -387,7 +397,7 @@ const $researchApiKey = $("research-api-key");
 // Restore
 $researchMode.value = localStorage.getItem(LSKEY_RESEARCH_MODE) || "";
 $researchProvider.value = localStorage.getItem(LSKEY_SEARCH_PROVIDER) || "tavily";
-$researchApiKey.value = localStorage.getItem(LSKEY_SEARCH_APIKEY) || "";
+$researchApiKey.value = sessionStorage.getItem(LSKEY_SEARCH_APIKEY) || "";
 onResearchModeChange();
 
 $researchMode.addEventListener("change", onResearchModeChange);
@@ -395,7 +405,7 @@ $researchProvider.addEventListener("change", () =>
   localStorage.setItem(LSKEY_SEARCH_PROVIDER, $researchProvider.value)
 );
 $researchApiKey.addEventListener("input", () =>
-  localStorage.setItem(LSKEY_SEARCH_APIKEY, $researchApiKey.value)
+  sessionStorage.setItem(LSKEY_SEARCH_APIKEY, $researchApiKey.value)
 );
 
 function onResearchModeChange() {

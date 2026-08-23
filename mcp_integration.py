@@ -175,6 +175,11 @@ class MCPManager:
                     )
                     if not tool_calls:
                         return content or final_content
+                    # Preserve the assistant response as ONE message carrying the
+                    # complete tool_calls array, then one tool message per result.
+                    current.append(
+                        {"role": "assistant", "content": content, "tool_calls": tool_calls}
+                    )
                     for tc in tool_calls:
                         fn = tc.get("function", {})
                         name = fn.get("name", "")
@@ -183,9 +188,6 @@ class MCPManager:
                         except Exception:
                             args = {}
                         result = await self.call_tool(name, args)
-                        current.append(
-                            {"role": "assistant", "content": None, "tool_calls": [tc]}
-                        )
                         current.append(
                             {"role": "tool", "tool_call_id": tc.get("id"), "content": result}
                         )

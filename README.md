@@ -69,6 +69,11 @@ The container reaches the host's Ollama / LM Studio through
 `host.docker.internal` (see `docker-compose.yml`). Build just the image with
 `docker build -t resume-tailor:latest .`.
 
+By default the container's port is published **loopback-only**
+(`127.0.0.1:8000:8000`), so it is reachable only from this machine. To allow
+LAN access, change the port binding to `8000:8000` in `docker-compose.yml` and
+be aware the app will be exposed on your network without authentication.
+
 ## 🖥️ Run the Windows executables
 
 Two pre-built executables are available (see **Releases** or build from source):
@@ -149,6 +154,7 @@ resume-tailor/
 | `MCP_SERVERS`        | `[]`                  | JSON list of MCP servers                  |
 | `RSS_FEED_URL`       | *(none)*              | Optional default RSS feed URL (prefilled in UI) |
 | `JOB_FEED_FILE`      | `…/hermes/cron/output/job_hunting/latest.json` | Path to the Hermes cron job JSON feed |
+| `ALLOW_CLIENT_MCP_SERVERS` | `0` | Set `1` to allow the browser to configure MCP servers (desktop app sets this automatically) |
 
 See [`.env.example`](.env.example) for a template.
 

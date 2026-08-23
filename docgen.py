@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -37,14 +39,43 @@ def markdown_to_docx(markdown_text: str) -> Document:
             text = stripped[2:].strip()
             p = doc.add_paragraph(style="List Bullet")
             p.add_run(text)
-        # Numbered-ish lines
-        elif stripped[:2].isdigit() and len(stripped) > 2 and stripped[2] in ". )":
-            text = stripped[3:].strip()
-            p = doc.add_paragraph(style="List Number")
-            p.add_run(text)
+        # Numbered lines: 1. Item, 1) Item, 10. Item
         else:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p.add_run(stripped)
+            numbered = re.match(r"^(\d+)[.)]\s+(.*)$", stripped)
+            if numbered:
+                text = numbered.group(2).strip()
+                p = doc.add_paragraph(style="List Number")
+                p.add_run(text)
+            else:
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p.add_run(stripped)
 
     return doc
+
+
+def markdown_to_text(markdown_text: str) -> str:
+    """Convert simple markdown to clean plain text (strip formatting markers).
+
+    Shared by the Flask download route and the desktop native save path so both
+    produce identical plain-text output.
+    """
+    lines = []
+    for raw_line in markdown_text.splitlines():
+        s = raw_line.strip()
+        if not s:
+            lines.append("")
+            continue
+        # Headings: strip the '#' markers.
+        if s.startswith("#"):
+            s = re.sub(r"^#+\s*", "", s)
+        # Bullets: strip the '- ' / '* ' markers.
+        elif s.startswith("- ") or s.startswith("* "):
+            s = s[2:]
+        # Numbered items: keep the number but normalize spacing after it.
+        else:
+            numbered = re.match(r"^(\d+)[.)]\s+(.*)$", s)
+            if numbered:
+                s = f"{numbered.group(1)}. {numbered.group(2).strip()}"
+        lines.append(s)
+    return "\n".join(lines).strip()

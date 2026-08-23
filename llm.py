@@ -158,6 +158,14 @@ def list_models(backend_id: str, api_key: str = "", timeout: float = 8.0) -> lis
     return [m for m in models if m]
 
 
+def _require_api_key(backend: dict, api_key: str) -> None:
+    """Raise if a remote backend requires an API key and none was supplied."""
+    if backend.get("auth_header") and not api_key:
+        raise RuntimeError(
+            f"'{backend['label']}' needs an API key. Enter it in Settings."
+        )
+
+
 def chat_completion(
     backend_id: str,
     model: str,
@@ -176,11 +184,7 @@ def chat_completion(
     if not backend:
         raise RuntimeError(f"Unknown backend: {backend_id}")
 
-    needs_key = bool(backend.get("auth_header"))
-    if needs_key and not api_key:
-        raise RuntimeError(
-            f"'{backend['label']}' needs an API key. Enter it in Settings."
-        )
+    _require_api_key(backend, api_key)
 
     url = backend["base_url"] + "/v1/chat/completions"
     headers = {}
@@ -249,6 +253,8 @@ def chat_with_tools(
     backend = bmap.get(backend_id)
     if not backend:
         raise RuntimeError(f"Unknown backend: {backend_id}")
+
+    _require_api_key(backend, api_key)
 
     url = backend["base_url"] + "/v1/chat/completions"
     headers = {}
