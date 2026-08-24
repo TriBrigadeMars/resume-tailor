@@ -32,6 +32,10 @@ opportunities in-app.
 - **Cron job feed** — a dedicated column displays job opportunities from the
   most recent Hermes cron job output (JSON feed); click a job to load it and
   generate a tailored resume + cover letter.
+- **Auto-process jobs** — for each job in an RSS or cron feed, fetch the page,
+  populate the job description, and auto-run resume/cover-letter generation,
+  pausing after each job for review. Optionally select a resume file to use for
+  all jobs in the batch.
 - **Desktop app** (Windows) — native window + system tray, no browser needed.
 
 ---

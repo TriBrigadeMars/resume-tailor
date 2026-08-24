@@ -141,6 +141,23 @@ def test_preview_rejects_missing_url(client):
     assert resp.status_code == 400
 
 
+def test_preview_rejects_localhost(client):
+    resp = client.get("/api/preview", query_string={"url": "http://localhost:8000/feed"})
+    assert resp.status_code == 400
+
+
+def test_preview_rejects_private_ip(client):
+    resp = client.get("/api/preview", query_string={"url": "http://192.168.1.1/"})
+    assert resp.status_code == 400
+
+
+def test_safe_fetch_rejects_private():
+    import safe_fetch
+
+    with pytest.raises(ValueError):
+        safe_fetch.fetch_bytes("http://127.0.0.1:11434/")
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 hardening regression tests
 # ---------------------------------------------------------------------------

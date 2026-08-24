@@ -21,6 +21,7 @@ import docgen
 import search
 import mcp_integration
 import rss
+import safe_fetch
 
 # ---- prompt helpers (moved up for reuse in API key route) ----
 
@@ -281,7 +282,7 @@ def _html_to_text(html: str) -> str:
 
     # Drop non-content blocks (scripts, styles, nav, etc.).
     html = re.sub(
-        r"<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\\1>",
+        r"<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\1>",
         " ", html, flags=re.IGNORECASE | re.DOTALL,
     )
     # Defensive: remove any remaining style/script blocks.
@@ -325,32 +326,24 @@ def api_preview():
 
     Used by the Job Opportunities preview modal so users can read a posting
     before opening it in the browser (works even when the site blocks iframes).
+    Fetches through the shared SSRF-safe helper.
     """
-    import urllib.request
-    import urllib.error
-
     url = request.args.get("url", "").strip()
     if not url.startswith(("http://", "https://")):
         return jsonify({"error": "Invalid URL."}), 400
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-    }
     try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-            final_url = resp.geturl()
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        data = safe_fetch.fetch_bytes(url, max_bytes=2 * 1024 * 1024, timeout=15)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
         return jsonify({"error": f"Could not fetch page: {exc}"}), 502
 
+    html = data.decode("utf-8", errors="replace")
     title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
     title = re.sub(r"\s+", " ", title_m.group(1)).strip() if title_m else url
 
-    return jsonify({"title": title, "text": _html_to_text(html)[:20000], "url": final_url})
+    return jsonify({"title": title, "text": _html_to_text(html)[:20000], "url": url})
 
 
 @app.route("/api/mcp/tools", methods=["POST"])

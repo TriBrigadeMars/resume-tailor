@@ -9,6 +9,8 @@ const state = {
   resume: "",
   cover: "",
   activeTab: "resume",
+  rssJobs: [],
+  cronJobs: [],
 };
 
 // Secrets (API keys) must not persist across sessions. Migrate any legacy
@@ -229,6 +231,7 @@ async function loadRssFeed() {
       $rssStatus.textContent = data.error || "No jobs found in feed.";
       return;
     }
+    state.rssJobs = jobs;
     $rssStatus.textContent = `${jobs.length} jobs loaded. Click one to use it.`;
     renderRssJobs(jobs);
   } catch (err) {
@@ -292,10 +295,12 @@ async function loadCronJobs() {
     const data = await res.json();
     const jobs = data.jobs || [];
     if (!jobs.length) {
+      state.cronJobs = [];
       $cronStatus.textContent = data.error || "No job opportunities in the cron feed yet.";
       $cronJobList.innerHTML = "";
       return;
     }
+    state.cronJobs = jobs;
     $cronStatus.textContent = `${jobs.length} job opportunities from the latest cron run.`;
     renderCronJobs(jobs);
   } catch (err) {
@@ -382,6 +387,102 @@ document.addEventListener("keydown", (e) => {
 
 $("cron-refresh-btn").addEventListener("click", loadCronJobs);
 loadCronJobs();
+
+/* ---------- Auto-process jobs ---------- */
+const $autoControls = $("auto-controls");
+const $autoResumeName = $("auto-resume-name");
+let autoResumeText = "";
+let autoJobs = [];
+let autoIndex = 0;
+let autoRunning = false;
+
+// Select a resume file to use for every job in the batch.
+$("auto-resume-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res = await fetch("/api/extract", { method: "POST", body: fd });
+    const data = await res.json();
+    if (data.error) { setStatus(data.error, "error"); return; }
+    autoResumeText = data.text;
+    $autoResumeName.textContent = file.name;
+    setStatus(`✓ Resume loaded for auto-processing: ${file.name}`, "ok");
+  } catch (err) {
+    setStatus("Failed to read resume file.", "error");
+  }
+});
+
+function startAutoProcess(jobs, label) {
+  if (!jobs || !jobs.length) {
+    setStatus("No jobs to process. Load a feed first.", "error");
+    return;
+  }
+  autoJobs = jobs;
+  autoIndex = 0;
+  autoRunning = true;
+  $autoControls.classList.remove("hidden");
+  setStatus(`Auto-processing ${label}: ${jobs.length} jobs.`, "");
+  processNextJob();
+}
+
+async function processNextJob() {
+  if (!autoRunning) return;
+  if (autoIndex >= autoJobs.length) {
+    setStatus("✓ All jobs processed.", "ok");
+    autoRunning = false;
+    $autoControls.classList.add("hidden");
+    return;
+  }
+  const job = autoJobs[autoIndex];
+  const url = job.url || job.link;
+  setStatus(`Processing ${autoIndex + 1}/${autoJobs.length}: ${job.title || "job"}…`, "");
+  if (!url) {
+    setStatus(`No URL for "${job.title || "job"}". Click Next to skip.`, "error");
+    return;
+  }
+  try {
+    const res = await fetch(`/api/preview?url=${encodeURIComponent(url)}`);
+    const data = await res.json();
+    if (data.error) {
+      setStatus(`Could not fetch "${job.title || "job"}": ${data.error}`, "error");
+      return;
+    }
+    $("job-description").value = data.text || "";
+    if (autoResumeText) $("resume-text").value = autoResumeText;
+    setStatus(`✓ Loaded job ${autoIndex + 1}. Generating…`, "ok");
+    await autoGenerate();
+  } catch (err) {
+    setStatus(`Error processing "${job.title || "job"}": ${err.message}`, "error");
+  }
+}
+
+async function autoGenerate() {
+  if (!state.model) {
+    setStatus("No model selected. Select a backend and model, then click Next.", "error");
+    return;
+  }
+  if (!$("resume-text").value.trim() || !$("job-description").value.trim()) {
+    setStatus("Resume or job description missing. Click Next to skip.", "error");
+    return;
+  }
+  await generate();
+  setStatus(`✓ Generated for job ${autoIndex + 1}. Review, then click Next.`, "ok");
+}
+
+$("auto-process-rss").addEventListener("click", () => startAutoProcess(state.rssJobs, "RSS feed"));
+$("auto-process-cron").addEventListener("click", () => startAutoProcess(state.cronJobs, "cron feed"));
+$("auto-next").addEventListener("click", () => {
+  if (!autoRunning) return;
+  autoIndex++;
+  processNextJob();
+});
+$("auto-stop").addEventListener("click", () => {
+  autoRunning = false;
+  $autoControls.classList.add("hidden");
+  setStatus("Auto-processing stopped.", "");
+});
 
 /* ---------- Research settings ---------- */
 const LSKEY_RESEARCH_MODE = "RT_research_mode";

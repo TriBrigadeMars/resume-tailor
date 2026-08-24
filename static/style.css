@@ -286,6 +286,19 @@ select {
   color: var(--accent-2);
   margin-top: 4px;
 }
+.auto-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.auto-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.auto-controls.hidden { display: none; }
+.auto-controls .ghost-btn { flex: 1; }
 
 /* Job preview modal */
 .modal-overlay {

@@ -24,7 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remote API keys are no longer persisted to `localStorage`; they now use
   `sessionStorage` and legacy keys are removed on load.
 
+### Security
+- Fixed an SSRF in `/api/preview`: job-page previews now use the shared
+  SSRF-safe fetch (private/localhost/redirect/size protections), matching RSS.
+- Fixed a regex backreference bug in `_html_to_text` so nav/header/footer/
+  aside/form blocks are stripped as intended.
+
 ### Added
+- **Auto-process jobs**: for each job in an RSS or cron feed, fetch the page,
+  populate the job description, and auto-run resume/cover-letter generation,
+  pausing after each job for review (with Next/Stop controls). Includes a
+  "select resume file for all jobs" option.
 - New **Job Opportunities** column that displays jobs from the most recent
   Hermes cron job output (JSON feed), with click-to-load into the generator.
 - New `GET /api/cron-jobs` endpoint that reads the Hermes cron feed.

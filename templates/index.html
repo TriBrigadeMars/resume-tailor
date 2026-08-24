@@ -118,6 +118,20 @@
         Loaded from the most recent Job Hunting cron job output. Click a job to
         open it in your browser, then copy the job description into the field.
       </p>
+
+      <h2>Auto-Process Jobs</h2>
+      <label class="file-btn" for="auto-resume-file">Select resume file (for all jobs)</label>
+      <input type="file" id="auto-resume-file" accept=".docx,.pdf,.txt,.md" hidden />
+      <span id="auto-resume-name" class="file-name"></span>
+      <div class="auto-actions">
+        <button id="auto-process-rss" class="ghost-btn">⚙ Auto-process RSS jobs</button>
+        <button id="auto-process-cron" class="ghost-btn">⚙ Auto-process cron jobs</button>
+      </div>
+      <div id="auto-status" class="hint"></div>
+      <div id="auto-controls" class="auto-controls hidden">
+        <button id="auto-next" class="ghost-btn">Next job →</button>
+        <button id="auto-stop" class="ghost-btn">Stop</button>
+      </div>
     </section>
 
     <!-- Right: outputs -->
