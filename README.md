@@ -57,10 +57,24 @@ python -m venv .venv
 .venv\Scripts\activate          # Windows
 source .venv/bin/activate       # macOS / Linux
 pip install -r requirements.txt
+```
+
+### Web app (browser)
+
+```bash
 python app.py
 ```
 
 Then open <http://localhost:8000>.
+
+### Desktop GUI (native window + system tray)
+
+```bash
+python desktop.py
+```
+
+On Windows you can also double-click **`launch_desktop.bat`** to start the
+desktop GUI without opening a terminal.
 
 ## 🐨 Run with Docker
 
@@ -113,6 +127,7 @@ python -m pytest tests/ -v
 resume-tailor/
 ├── app.py                 # Flask backend (API + routes)
 ├── desktop.py             # Desktop launcher (pywebview + pystray)
+├── launch_desktop.bat     # Windows launcher for the desktop GUI
 ├── llm.py                 # LLM client (Ollama / LM Studio / OpenRouter)
 ├── docgen.py              # Markdown → .docx conversion
 ├── search.py              # Web search clients (Tavily / Brave / SerpAPI)
