@@ -198,46 +198,31 @@ $("temperature").addEventListener("input", (e) => {
   $("temp-value").textContent = e.target.value;
 });
 
-/* ---------- RSS job feed ---------- */
-const LSKEY_RSS_URL = "RT_rss_url";
-const $rssUrl = $("rss-url");
+/* ---------- Cron job feed (2b) ---------- */
 const $rssStatus = $("rss-status");
 const $rssJobList = $("rss-job-list");
 
-$rssUrl.value = localStorage.getItem(LSKEY_RSS_URL) || "";
-$rssUrl.addEventListener("change", () =>
-  localStorage.setItem(LSKEY_RSS_URL, $rssUrl.value.trim())
-);
+$("cron-load-btn").addEventListener("click", loadCronJobsInPanel);
 
-$("rss-load-btn").addEventListener("click", loadRssFeed);
-$rssUrl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") loadRssFeed();
-});
-
-async function loadRssFeed() {
-  const url = $rssUrl.value.trim();
-  if (!url) {
-    $rssStatus.textContent = "Enter an RSS feed URL first.";
-    return;
-  }
-  localStorage.setItem(LSKEY_RSS_URL, url);
-  $rssStatus.textContent = "Loading feed…";
+async function loadCronJobsInPanel() {
+  $rssStatus.textContent = "Loading cron jobs…";
   $rssJobList.innerHTML = "";
   try {
-    const res = await fetch("/api/rss?url=" + encodeURIComponent(url));
+    const res = await fetch("/api/cron-jobs");
     const data = await res.json();
     const jobs = data.jobs || [];
     if (!jobs.length) {
-      $rssStatus.textContent = data.error || "No jobs found in feed.";
+      $rssStatus.textContent = data.error || "No cron jobs yet.";
       return;
     }
     state.rssJobs = jobs;
-    $rssStatus.textContent = `${jobs.length} jobs loaded. Click one to use it.`;
+    $rssStatus.textContent = `${jobs.length} cron jobs loaded. Click one to use it.`;
     renderRssJobs(jobs);
   } catch (err) {
-    $rssStatus.textContent = "Failed to load feed: " + err.message;
+    $rssStatus.textContent = "Failed to load cron jobs: " + err.message;
   }
 }
+loadCronJobsInPanel();
 
 function renderRssJobs(jobs) {
   $rssJobList.innerHTML = "";
@@ -471,7 +456,6 @@ async function autoGenerate() {
   setStatus(`✓ Generated for job ${autoIndex + 1}. Review, then click Next.`, "ok");
 }
 
-$("auto-process-rss").addEventListener("click", () => startAutoProcess(state.rssJobs, "RSS feed"));
 $("auto-process-cron").addEventListener("click", () => startAutoProcess(state.cronJobs, "cron feed"));
 $("auto-next").addEventListener("click", () => {
   if (!autoRunning) return;
