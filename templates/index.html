@@ -26,9 +26,10 @@
       <h2>2 · Job description</h2>
       <textarea id="job-description" rows="10" placeholder="Paste the full job description / posting here…"></textarea>
 
-      <h2>2b · Job Feed (Cron) <span class="tag opt">optional</span></h2>
+      <h2>2b · Job Feed (RSS/Atom) <span class="tag opt">optional</span></h2>
       <div class="rss-row">
-        <button id="cron-load-btn" class="ghost-btn">Load cron jobs</button>
+        <input type="url" id="rss-url" placeholder="https://example.com/jobs.xml" />
+        <button id="rss-load-btn" class="ghost-btn">Load feed</button>
       </div>
       <div id="rss-status" class="hint"></div>
       <div id="rss-job-list" class="rss-jobs"></div>
@@ -123,7 +124,8 @@
       <input type="file" id="auto-resume-file" accept=".docx,.pdf,.txt,.md" hidden />
       <span id="auto-resume-name" class="file-name"></span>
       <div class="auto-actions">
-        <button id="auto-process-cron" class="ghost-btn">⚙ Auto-process jobs</button>
+        <button id="auto-process-rss" class="ghost-btn">⚙ Auto-process RSS jobs</button>
+        <button id="auto-process-cron" class="ghost-btn">⚙ Auto-process cron jobs</button>
       </div>
       <div id="auto-status" class="hint"></div>
       <div id="auto-controls" class="auto-controls hidden">

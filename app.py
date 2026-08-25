@@ -39,6 +39,15 @@ app = Flask(
 )
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB uploads
 
+
+@app.after_request
+def _security_headers(response):
+    """Add baseline browser hardening that is safe for the desktop WebView."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    return response
+
 def _untrusted_input_note() -> str:
     return (
         "\n\nIMPORTANT: The job description, company research, and candidate "

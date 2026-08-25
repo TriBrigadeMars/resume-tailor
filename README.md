@@ -11,9 +11,10 @@ tools** the LLM can call while generating, and **RSS job feeds** to load
 opportunities in-app.
 
 > **Privacy note:** your API keys (OpenRouter, LM Studio, search providers) are
-> kept only in the browser's `localStorage` and sent to the app's local server
-> at request time. They are **never written to disk** and never leave your
-> machine unless you use a remote LLM backend.
+> kept only in the browser's `sessionStorage` and sent to the app's local server
+> at request time. They are **never written to disk**. A key leaves your machine
+> only when the feature using it contacts the remote provider you selected (for
+> example OpenRouter or a web-search provider).
 
 ---
 

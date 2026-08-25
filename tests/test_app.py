@@ -82,6 +82,26 @@ def test_index_serves_ui(client):
     assert b"ResumeTailor" in resp.data
 
 
+def test_index_exposes_rss_loader(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b'id="rss-url"' in resp.data
+    assert b'id="rss-load-btn"' in resp.data
+
+
+def test_security_headers_are_present(client):
+    resp = client.get("/")
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert resp.headers["X-Frame-Options"] == "DENY"
+    assert resp.headers["Referrer-Policy"] == "no-referrer"
+
+
+def test_safe_fetch_redirect_limit_matches_documented_limit():
+    import safe_fetch
+
+    assert safe_fetch._SafeRedirectHandler.max_redirections == safe_fetch.MAX_REDIRECTS
+
+
 def test_backends_endpoint(client):
     resp = client.get("/api/backends")
     assert resp.status_code == 200

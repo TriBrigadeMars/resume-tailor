@@ -22,3 +22,14 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -v
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t resume-tailor:test .
+
+      - name: Smoke-test application imports
+        run: docker run --rm resume-tailor:test python -c "import app; print('app import OK')"

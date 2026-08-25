@@ -30,7 +30,7 @@ Thumbs.db
 
 # ---- Secrets — NEVER commit API keys or tokens ----
 # OpenRouter / LM Studio / search provider keys live only in the browser
-# (localStorage) and are never written to disk by the app. If you keep any
+# (sessionStorage) and are never written to disk by the app. If you keep any
 # key files locally, make sure they are ignored here:
 *.key
 *API Key*.txt

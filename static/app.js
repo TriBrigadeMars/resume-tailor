@@ -198,31 +198,41 @@ $("temperature").addEventListener("input", (e) => {
   $("temp-value").textContent = e.target.value;
 });
 
-/* ---------- Cron job feed (2b) ---------- */
+/* ---------- RSS / Atom job feed (2b) ---------- */
+const LSKEY_RSS_URL = "RT_rss_url";
+const $rssUrl = $("rss-url");
 const $rssStatus = $("rss-status");
 const $rssJobList = $("rss-job-list");
 
-$("cron-load-btn").addEventListener("click", loadCronJobsInPanel);
+$rssUrl.value = localStorage.getItem(LSKEY_RSS_URL) || "";
+$("rss-load-btn").addEventListener("click", loadRssJobs);
 
-async function loadCronJobsInPanel() {
-  $rssStatus.textContent = "Loading cron jobs…";
+async function loadRssJobs() {
+  const url = $rssUrl.value.trim();
+  if (!isHttpUrl(url)) {
+    $rssStatus.textContent = "Enter a valid http(s) RSS/Atom feed URL.";
+    return;
+  }
+  localStorage.setItem(LSKEY_RSS_URL, url);
+  $rssStatus.textContent = "Loading RSS feed…";
   $rssJobList.innerHTML = "";
   try {
-    const res = await fetch("/api/cron-jobs");
+    const res = await fetch(`/api/rss?url=${encodeURIComponent(url)}`);
     const data = await res.json();
     const jobs = data.jobs || [];
-    if (!jobs.length) {
-      $rssStatus.textContent = data.error || "No cron jobs yet.";
+    if (!res.ok || !jobs.length) {
+      state.rssJobs = [];
+      $rssStatus.textContent = data.error || "No jobs found in this feed.";
       return;
     }
     state.rssJobs = jobs;
-    $rssStatus.textContent = `${jobs.length} cron jobs loaded. Click one to use it.`;
+    $rssStatus.textContent = `${jobs.length} RSS jobs loaded. Click one to use it.`;
     renderRssJobs(jobs);
   } catch (err) {
-    $rssStatus.textContent = "Failed to load cron jobs: " + err.message;
+    state.rssJobs = [];
+    $rssStatus.textContent = "Failed to load RSS feed: " + err.message;
   }
 }
-loadCronJobsInPanel();
 
 function renderRssJobs(jobs) {
   $rssJobList.innerHTML = "";
@@ -313,8 +323,8 @@ function renderCronJobs(jobs) {
 }
 
 function useCronJob(job) {
-  if (!job.url) {
-    setStatus("This job has no URL to preview.", "error");
+  if (!isHttpUrl(job.url)) {
+    setStatus("This job does not have a safe http(s) URL to preview.", "error");
     return;
   }
   openPreview(job);
@@ -329,6 +339,10 @@ const $previewBody = $("preview-body");
 let previewJobUrl = "";
 
 function openPreview(job) {
+  if (!isHttpUrl(job.url)) {
+    setStatus("This job does not have a safe http(s) URL to preview.", "error");
+    return;
+  }
   previewJobUrl = job.url;
   $previewTitle.textContent = job.title || "Job Preview";
   $previewSource.textContent = job.source ? `Source: ${job.source}` : "";
@@ -452,10 +466,13 @@ async function autoGenerate() {
     setStatus("Resume or job description missing. Click Next to skip.", "error");
     return;
   }
-  await generate();
-  setStatus(`✓ Generated for job ${autoIndex + 1}. Review, then click Next.`, "ok");
+  const generated = await generate();
+  if (generated) {
+    setStatus(`✓ Generated for job ${autoIndex + 1}. Review, then click Next.`, "ok");
+  }
 }
 
+$("auto-process-rss").addEventListener("click", () => startAutoProcess(state.rssJobs, "RSS feed"));
 $("auto-process-cron").addEventListener("click", () => startAutoProcess(state.cronJobs, "cron feed"));
 $("auto-next").addEventListener("click", () => {
   if (!autoRunning) return;
@@ -597,6 +614,16 @@ $("mcp-list-tools-btn").addEventListener("click", async () => {
 
 renderMcpServers();
 
+function isHttpUrl(value) {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -609,11 +636,11 @@ async function generate() {
   const jobDesc = $("job-description").value.trim();
   if (!resumeText || !jobDesc) {
     setStatus("Please provide both a resume and a job description.", "error");
-    return;
+    return false;
   }
   if (!state.model) {
     setStatus("No model selected. Select a backend and model first.", "error");
-    return;
+    return false;
   }
 
   const btn = $("generate-btn");
@@ -655,9 +682,9 @@ async function generate() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (data.error) {
-      setStatus(data.error, "error");
-      return;
+    if (!res.ok || data.error) {
+      setStatus(data.error || `Generation failed (HTTP ${res.status}).`, "error");
+      return false;
     }
     state.resume = data.resume_md;
     state.cover = data.cover_letter;
@@ -666,8 +693,10 @@ async function generate() {
     $("empty-state").style.display = "none";
     setStatus("✓ Done. Review, edit, and download below.", "ok");
     switchTab("resume");
+    return true;
   } catch (err) {
     setStatus("Request failed: " + err.message, "error");
+    return false;
   } finally {
     btn.disabled = false;
   }

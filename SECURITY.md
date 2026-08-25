@@ -27,8 +27,9 @@ The following are in scope:
 ## What this project does about secrets
 
 - **API keys are never stored on disk.** OpenRouter, LM Studio, and search
-  provider keys are kept only in the browser's `localStorage` and sent to the
-  app's local server at request time.
+  provider keys are kept only in the browser's `sessionStorage` and sent to the
+  app's local server at request time. The server forwards a key only to the
+  remote provider for the feature the user explicitly selected.
 - The app binds to `127.0.0.1` by default. When exposing it beyond localhost
   (e.g. in Docker), put it behind a reverse proxy with authentication and TLS.
 

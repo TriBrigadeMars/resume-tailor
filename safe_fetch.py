@@ -62,6 +62,10 @@ def validate_url(url: str) -> None:
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Redirect handler that validates each redirect target for SSRF safety."""
 
+    # HTTPRedirectHandler defaults to 10. Keep the documented application limit
+    # explicit here so MAX_REDIRECTS is not merely informational.
+    max_redirections = MAX_REDIRECTS
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         validate_url(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
