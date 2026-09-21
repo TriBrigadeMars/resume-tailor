@@ -7,6 +7,7 @@ Then open http://localhost:8000 in your browser.
 from __future__ import annotations
 
 import io
+import json
 import math
 import os
 import re
@@ -22,6 +23,8 @@ import search
 import mcp_integration
 import rss
 import safe_fetch
+import htmltext
+from portutils import find_free_port
 
 # ---- prompt helpers (moved up for reuse in API key route) ----
 
@@ -186,10 +189,9 @@ def _extract_company_role(
                 idx += 1
             raw = raw[:idx]
             break
-    import json as _json
 
     try:
-        parsed = _json.loads(raw)
+        parsed = json.loads(raw)
         return (
             str(parsed.get("company", "")).strip(),
             str(parsed.get("role", "")).strip(),
@@ -279,54 +281,10 @@ def api_cron_jobs():
         return jsonify({"jobs": [], "feed_file": feed_file, "error": None})
     try:
         with open(feed_file, "r", encoding="utf-8") as f:
-            jobs = _json.load(f)
+            jobs = json.load(f)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"jobs": [], "feed_file": feed_file, "error": f"Could not read feed: {exc}"}), 500
     return jsonify({"jobs": jobs, "feed_file": feed_file, "error": None})
-
-
-def _html_to_text(html: str) -> str:
-    """Strip scripts/styles/nav and extract readable text from a page."""
-    import html as _html_mod
-
-    # Drop non-content blocks (scripts, styles, nav, etc.).
-    html = re.sub(
-        r"<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\1>",
-        " ", html, flags=re.IGNORECASE | re.DOTALL,
-    )
-    # Defensive: remove any remaining style/script blocks.
-    html = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.IGNORECASE | re.DOTALL)
-    html = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.IGNORECASE | re.DOTALL)
-    # Turn block tags into newlines.
-    html = re.sub(
-        r"<(br|/p|/div|/li|/h[1-6]|/tr|/section|/article)[^>]*>", "\n", html,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(r"<[^>]+>", " ", html)
-    text = _html_mod.unescape(text)
-    text = re.sub(r"[ \t]+", " ", text)
-
-    # Drop lines that are clearly CSS or JavaScript noise.
-    lines = []
-    for line in text.split("\n"):
-        s = line.strip()
-        if not s:
-            continue
-        # CSS rules / styled-components noise (e.g. .cls{...} or @media{...}).
-        if re.match(r"^[.#][A-Za-z][\w-]*\{", s):
-            continue
-        if re.match(r"^@media", s):
-            continue
-        if "/*!sc*/" in s or re.search(r"^[.#][A-Za-z][\w-]*\{.*\}", s):
-            continue
-        # JavaScript noise.
-        if re.search(r"function\s*\(|=>|window\.|document\.|\bvar\s+\w+\s*=", s):
-            continue
-        # Very long single-line CSS (minified) that still contains braces.
-        if "{" in s and "}" in s and ";" in s:
-            continue
-        lines.append(s)
-    return "\n".join(lines)[:20000]
 
 
 @app.route("/api/preview")
@@ -342,7 +300,7 @@ def api_preview():
         return jsonify({"error": "Invalid URL."}), 400
 
     try:
-        data = safe_fetch.fetch_bytes(url, max_bytes=2 * 1024 * 1024, timeout=15)
+        data = safe_fetch.fetch_bytes(url)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -352,7 +310,7 @@ def api_preview():
     title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
     title = re.sub(r"\s+", " ", title_m.group(1)).strip() if title_m else url
 
-    return jsonify({"title": title, "text": _html_to_text(html)[:20000], "url": url})
+    return jsonify({"title": title, "text": htmltext.html_to_text(html), "url": url})
 
 
 @app.route("/api/mcp/tools", methods=["POST"])
@@ -401,47 +359,45 @@ def api_generate():
 
     # --- Optional: research ---
     research_text = ""
-    if research_mode == "web" and research_provider and research_api_key:
-        company, role = _extract_company_role(
-            backend, model, job_description, temperature, api_key
-        )
-        if company:
-            query = f'"{company}" company culture mission products values'
-            if role:
-                query += f' {role}'
-            try:
-                research_text = search.search_web(
-                    research_provider, research_api_key, query
-                )
-            except Exception as exc:
-                research_text = f"[Web research failed: {exc}]"
-    elif research_mode == "llm":
-        company, role = _extract_company_role(
-            backend, model, job_description, temperature, api_key
-        )
-        if company:
-            try:
-                research_text = llm.chat_completion(
-                    backend,
-                    model,
-                    [
-                        {"role": "system", "content": "You are a knowledgeable research assistant. Answer concisely with factual information."},
-                        {
-                            "role": "user",
-                            "content": (
-                                f'Tell me everything you know about the company "{company}". '
-                                "Cover: what they do, their mission, products/services, "
-                                "company culture, recent news, and values. "
-                                "Be specific and factual. Keep it to 3-4 paragraphs."
-                            ),
-                        },
-                    ],
-                    temperature=0.3,
-                    max_tokens=1024,
-                    api_key=api_key,
-                )
-            except Exception as exc:
-                research_text = f"[LLM research failed: {exc}]"
+    if research_mode in ("web", "llm"):
+        if research_mode == "web" and not research_api_key:
+            research_text = "[Web research skipped: no search API key configured.]"
+        else:
+            company, role = _extract_company_role(
+                backend, model, job_description, temperature, api_key
+            )
+            if company:
+                try:
+                    if research_mode == "web":
+                        query = f'"{company}" company culture mission products values'
+                        if role:
+                            query += f' {role}'
+                        research_text = search.search_web(
+                            research_provider, research_api_key, query
+                        )
+                    else:
+                        research_text = llm.chat_completion(
+                            backend,
+                            model,
+                            [
+                                {"role": "system", "content": "You are a knowledgeable research assistant. Answer concisely with factual information."},
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        f'Tell me everything you know about the company "{company}". '
+                                        "Cover: what they do, their mission, products/services, "
+                                        "company culture, recent news, and values. "
+                                        "Be specific and factual. Keep it to 3-4 paragraphs."
+                                    ),
+                                },
+                            ],
+                            temperature=0.3,
+                            max_tokens=1024,
+                            api_key=api_key,
+                        )
+                except Exception as exc:  # noqa: BLE001 - research is best-effort
+                    label = "Web" if research_mode == "web" else "LLM"
+                    research_text = f"[{label} research failed: {exc}]"
 
     def _generate(task: str) -> str:
         system = _resume_system() if task == "resume" else _cover_system()
@@ -463,6 +419,8 @@ def api_generate():
             if result is not None:
                 return result
             # No MCP tools available -> fall back to plain generation.
+            # A broken MCP session raises instead, so it surfaces as an error
+            # rather than silently degrading to a tool-less answer.
         return llm.chat_completion(
             backend, model, messages, temperature=temperature, api_key=api_key
         )
@@ -535,19 +493,6 @@ def download(doc_type: str):
     abort(400)
 
 
-def _find_free_port(start: int = 8000, tries: int = 10) -> int:
-    import socket
-
-    for port in range(start, start + tries):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    raise RuntimeError("No free port found in range.")
-
-
 if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port_env = os.environ.get("PORT", "")
@@ -557,7 +502,7 @@ if __name__ == "__main__":
         port = int(port_env)
     else:
         try:
-            port = _find_free_port()
+            port = find_free_port()
         except RuntimeError as exc:
             print(exc)
             raise

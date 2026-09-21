@@ -29,11 +29,10 @@ def markdown_to_docx(markdown_text: str) -> Document:
             continue
 
         stripped = line.strip()
-        # Headings: #, ##, ###
-        if stripped.startswith("#"):
-            level = len(stripped) - len(stripped.lstrip("#"))
-            text = stripped.lstrip("#").strip()
-            _apply_heading(doc, text, level)
+        # Headings: one to six '#' followed by whitespace (ATX style).
+        heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if heading:
+            _apply_heading(doc, heading.group(2).strip(), len(heading.group(1)))
         # Bullets
         elif stripped.startswith("- ") or stripped.startswith("* "):
             text = stripped[2:].strip()
@@ -67,7 +66,7 @@ def markdown_to_text(markdown_text: str) -> str:
             lines.append("")
             continue
         # Headings: strip the '#' markers.
-        if s.startswith("#"):
+        if re.match(r"^#{1,6}\s", s):
             s = re.sub(r"^#+\s*", "", s)
         # Bullets: strip the '- ' / '* ' markers.
         elif s.startswith("- ") or s.startswith("* "):

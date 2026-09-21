@@ -65,6 +65,37 @@ def _backends_by_id():
     return {b["id"]: b for b in LOCAL_BACKENDS + REMOTE_BACKENDS}
 
 
+def _get_backend(backend_id: str) -> dict:
+    """Look up a backend, raising for unknown ids."""
+    backend = _backends_by_id().get(backend_id)
+    if not backend:
+        raise RuntimeError(f"Unknown backend: {backend_id}")
+    return backend
+
+
+def _auth_headers(backend: dict, api_key: str) -> dict:
+    """Build the auth header for a backend. Empty for local backends."""
+    if not backend.get("auth_header"):
+        return {}
+    key, value = backend["auth_header"](api_key)
+    return {key: value}
+
+
+def _models_url(backend: dict) -> str:
+    return backend["base_url"] + backend["models_endpoint"]
+
+
+def _chat_url(backend: dict) -> str:
+    return backend["base_url"] + "/v1/chat/completions"
+
+
+def _parse_models(backend: dict, body: dict) -> list[str]:
+    """Extract the sorted, non-empty model names from a models response."""
+    raw = body.get(backend["models_key"], [])
+    models = sorted(m.get(backend["name_key"], "") for m in raw)
+    return [m for m in models if m]
+
+
 # ---------------------------------------------------------------------------
 # HTTP helpers
 # ---------------------------------------------------------------------------
@@ -97,10 +128,8 @@ def detect_backends() -> list[dict]:
     available = []
     for backend in LOCAL_BACKENDS:
         try:
-            body = _http_json(backend["base_url"] + backend["models_endpoint"])
-            raw = body.get(backend["models_key"], [])
-            models = sorted(m.get(backend["name_key"], "") for m in raw)
-            models = [m for m in models if m]
+            body = _http_json(_models_url(backend))
+            models = _parse_models(backend, body)
             if models:
                 available.append(
                     {
@@ -139,23 +168,16 @@ def list_models(backend_id: str, api_key: str = "", timeout: float = 8.0) -> lis
     if not backend:
         return []
 
-    headers = {}
-    if backend.get("auth_header"):
-        k, v = backend["auth_header"](api_key)
-        headers[k] = v
-
     try:
         body = _http_json(
-            backend["base_url"] + backend["models_endpoint"],
-            headers=headers,
+            _models_url(backend),
+            headers=_auth_headers(backend, api_key),
             timeout=timeout,
         )
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
         return []
 
-    raw = body.get(backend["models_key"], [])
-    models = sorted(m.get(backend["name_key"], "") for m in raw)
-    return [m for m in models if m]
+    return _parse_models(backend, body)
 
 
 def _require_api_key(backend: dict, api_key: str) -> None:
@@ -179,18 +201,12 @@ def chat_completion(
 
     For remote backends, pass api_key. Local backends ignore it.
     """
-    bmap = _backends_by_id()
-    backend = bmap.get(backend_id)
-    if not backend:
-        raise RuntimeError(f"Unknown backend: {backend_id}")
+    backend = _get_backend(backend_id)
 
     _require_api_key(backend, api_key)
 
-    url = backend["base_url"] + "/v1/chat/completions"
-    headers = {}
-    if backend.get("auth_header"):
-        k, v = backend["auth_header"](api_key)
-        headers[k] = v
+    url = _chat_url(backend)
+    headers = _auth_headers(backend, api_key)
 
     payload = {
         "model": model,
@@ -249,18 +265,12 @@ def chat_with_tools(
     Returns (content, tool_calls). If the model wants to call tools,
     tool_calls is non-empty and content may be empty.
     """
-    bmap = _backends_by_id()
-    backend = bmap.get(backend_id)
-    if not backend:
-        raise RuntimeError(f"Unknown backend: {backend_id}")
+    backend = _get_backend(backend_id)
 
     _require_api_key(backend, api_key)
 
-    url = backend["base_url"] + "/v1/chat/completions"
-    headers = {}
-    if backend.get("auth_header"):
-        k, v = backend["auth_header"](api_key)
-        headers[k] = v
+    url = _chat_url(backend)
+    headers = _auth_headers(backend, api_key)
 
     payload = {
         "model": model,

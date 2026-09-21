@@ -134,6 +134,8 @@ resume-tailor/
 ├── search.py              # Web search clients (Tavily / Brave / SerpAPI)
 ├── mcp_integration.py     # MCP server client + tool-calling loop
 ├── rss.py                 # RSS/Atom feed parser
+├── htmltext.py            # HTML → readable plain-text extraction
+├── portutils.py           # Shared free-port selection helper
 ├── static/                # Frontend (app.js, style.css)
 ├── templates/             # index.html
 ├── tests/                 # Smoke tests
