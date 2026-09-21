@@ -18,6 +18,29 @@ opportunities in-app.
 
 ---
 
+## ⬇️ Download (Windows)
+
+**No Python, no install, no setup** — grab a single-file `.exe` from the
+**[latest release](https://github.com/TriBrigadeMars/resume-tailor/releases/latest)**,
+double-click it, and the app runs locally:
+
+| Download | Description |
+|----------|-------------|
+| [**`ResumeTailor-Desktop.exe`**](https://github.com/TriBrigadeMars/resume-tailor/releases/latest/download/ResumeTailor-Desktop.exe) | **Recommended** — native window + system tray, no browser needed |
+| [`ResumeTailor.exe`](https://github.com/TriBrigadeMars/resume-tailor/releases/latest/download/ResumeTailor.exe) | Web app — starts a local server and opens your browser |
+
+Both are self-contained executables: everything (Python runtime, backend, and
+UI) is bundled inside the one file, so nothing else needs to be installed.
+
+> **First-run note:** Windows SmartScreen may warn about an unsigned binary.
+> Click **More info → Run anyway** to start the app.
+>
+> The app is a *local* UI — you still point it at an LLM backend you control
+> (Ollama or LM Studio running on your machine, or an OpenRouter API key).
+> See [Requirements](#-requirements) below.
+
+---
+
 ## ✨ Features
 
 - **Four LLM backends** — Ollama, LM Studio / Bionic (local), OpenRouter, and
@@ -111,6 +134,22 @@ Rebuild after code changes:
 # Desktop app
 .venv\Scripts\pyinstaller --clean --noconfirm --distpath dist-desktop Desktop.spec
 ```
+
+### Cutting a release
+
+Releases are produced automatically by GitHub Actions
+([`.github/workflows/build.yml`](.github/workflows/build.yml)). Push a version
+tag and CI builds both executables on `windows-latest` and attaches them to a
+new GitHub Release:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+You can also trigger the build manually from the **Actions** tab
+(`workflow_dispatch`) to download the executables as workflow artifacts
+without publishing a release.
 
 ---
 
