@@ -19,8 +19,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY app.py llm.py docgen.py search.py mcp_integration.py rss.py safe_fetch.py ./
+# Copy application code (all Python modules, so new ones can't be missed)
+COPY *.py ./
 COPY templates ./templates
 COPY static ./static
 
