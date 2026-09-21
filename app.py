@@ -21,9 +21,12 @@ import llm
 import docgen
 import search
 import mcp_integration
+import nodecheck
 import rss
 import safe_fetch
 import htmltext
+import updater
+import version
 from portutils import find_free_port
 
 # ---- prompt helpers (moved up for reuse in API key route) ----
@@ -232,8 +235,29 @@ def api_backends():
         {
             "backends": local + remote,
             "rss_feed_url": os.environ.get("RSS_FEED_URL", ""),
+            # Whether stdio MCP servers can launch (requires Node.js / npx).
+            # When false, the UI should warn the user when they add one.
+            "stdio_mcp_available": nodecheck.npx_available(),
+            "version": version.__version__,
         }
     )
+
+
+@app.route("/api/version")
+def api_version():
+    """Report the running app version (and, on demand, the latest release)."""
+    return jsonify({"version": version.__version__})
+
+
+@app.route("/api/check-update")
+def api_check_update():
+    """Opt-in check against the GitHub Releases API.
+
+    No network call happens until the user explicitly clicks "Check for
+    updates" (or invokes this route). We also do not modify or replace any
+    installed binary: this only reports the latest version + URL.
+    """
+    return jsonify(updater.check_for_update())
 
 
 @app.route("/api/models", methods=["POST"])
@@ -324,10 +348,11 @@ def api_mcp_tools():
     if not servers:
         return jsonify({"tools": [], "error": "No MCP servers configured."})
     manager = mcp_integration.MCPManager(servers)
-    tools, error = manager.list_tools_sync()
+    tools, error, skipped = manager.list_tools_sync()
     if error:
         return jsonify({"tools": [], "error": f"MCP error: {error}"}), 500
-    return jsonify({"tools": tools})
+    # Surface skipped stdio servers so the UI can render a per-server warning.
+    return jsonify({"tools": tools, "skipped": skipped})
 
 
 @app.route("/api/generate", methods=["POST"])

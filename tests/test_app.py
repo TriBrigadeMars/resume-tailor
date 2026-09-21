@@ -5,6 +5,7 @@ Run with:
 """
 
 import io
+import json
 
 import pytest
 
@@ -457,3 +458,337 @@ def test_run_tool_loop_raises_instead_of_returning_none(monkeypatch):
     monkeypatch.setattr(mgr, "connect_all", boom)
     with pytest.raises(RuntimeError, match="MCP tool loop failed"):
         mgr.run_tool_loop("ollama", "m", [{"role": "user", "content": "hi"}])
+
+
+# ---------------------------------------------------------------------------
+# W1: Node.js detection & graceful MCP degradation
+# ---------------------------------------------------------------------------
+
+
+def test_npx_available_short_circuits(monkeypatch):
+    import nodecheck
+
+    monkeypatch.setattr(nodecheck.shutil, "which", lambda name: None)
+    assert nodecheck.npx_available() is False
+
+
+def test_npx_available_detects_npx(monkeypatch):
+    import nodecheck
+
+    monkeypatch.setattr(nodecheck.shutil, "which", lambda name: "/usr/bin/npx")
+    monkeypatch.setattr(
+        nodecheck.subprocess,
+        "run",
+        lambda *a, **kw: type("R", (), {"stdout": b"10.0.0", "stderr": b"", "returncode": 0})(),
+    )
+    assert nodecheck.npx_available() is True
+
+
+def test_npx_available_false_on_subprocess_failure(monkeypatch):
+    import nodecheck
+
+    monkeypatch.setattr(nodecheck.shutil, "which", lambda name: "/usr/bin/npx")
+
+    def boom(*a, **kw):
+        raise OSError("no npx")
+
+    monkeypatch.setattr(nodecheck.subprocess, "run", boom)
+    assert nodecheck.npx_available() is False
+
+
+def test_stdio_mcp_filtered_without_npx(monkeypatch):
+    import nodecheck
+
+    monkeypatch.setattr(nodecheck, "npx_available", lambda: False)
+    servers = [
+        {"name": "fs", "type": "stdio", "command": "npx", "args": ["-y", "fs"]},
+        {"name": "web", "type": "http", "url": "http://example.com/mcp"},
+    ]
+    ok, skipped = nodecheck.stdio_mcp_supported(servers)
+    assert [s["name"] for s in ok] == ["web"]
+    assert [s["name"] for s in skipped] == ["fs"]
+
+
+def test_stdio_mcp_supported_with_npx(monkeypatch):
+    import nodecheck
+
+    monkeypatch.setattr(nodecheck, "npx_available", lambda: True)
+    servers = [
+        {"name": "fs", "type": "stdio", "command": "npx"},
+        {"name": "web", "type": "http", "url": "http://x"},
+    ]
+    ok, skipped = nodecheck.stdio_mcp_supported(servers)
+    assert len(ok) == 2
+    assert skipped == []
+
+
+def test_mcp_manager_filters_stdio_without_npx(monkeypatch):
+    import mcp_integration
+
+    monkeypatch.setattr("nodecheck.npx_available", lambda: False)
+    mgr = mcp_integration.MCPManager(
+        [
+            {"name": "fs", "type": "stdio", "command": "npx"},
+            {"name": "web", "type": "http", "url": "http://x"},
+        ]
+    )
+    assert [s["name"] for s in mgr.servers] == ["web"]
+    assert [s["name"] for s in mgr.skipped_servers] == ["fs"]
+
+
+def test_list_tools_sync_returns_skipped_list(monkeypatch):
+    import mcp_integration
+
+    monkeypatch.setattr("nodecheck.npx_available", lambda: False)
+    mgr = mcp_integration.MCPManager(
+        [{"name": "fs", "type": "stdio", "command": "npx"}]
+    )
+    tools, err, skipped = mgr.list_tools_sync()
+    assert err == ""
+    assert tools == []
+    assert [s["name"] for s in skipped] == ["fs"]
+
+
+def test_backends_reports_stdio_capability(client, monkeypatch):
+    monkeypatch.setattr("nodecheck.npx_available", lambda: False)
+    resp = client.get("/api/backends")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "stdio_mcp_available" in data
+    assert data["stdio_mcp_available"] is False
+
+
+def test_backends_reports_stdio_capability_true(client, monkeypatch):
+    monkeypatch.setattr("nodecheck.npx_available", lambda: True)
+    resp = client.get("/api/backends")
+    assert resp.status_code == 200
+    assert resp.get_json()["stdio_mcp_available"] is True
+
+
+def test_api_mcp_tools_surfaces_skipped(client, monkeypatch):
+    """When a stdio server is filtered, the response includes its name."""
+    import mcp_integration
+
+    monkeypatch.setattr("nodecheck.npx_available", lambda: False)
+    monkeypatch.setenv("ALLOW_CLIENT_MCP_SERVERS", "1")
+    monkeypatch.setattr("mcp_integration.get_servers_from_env", lambda: [])
+
+    def fake_list_tools_sync(self):
+        return [], "", list(self.skipped_servers)
+
+    monkeypatch.setattr(mcp_integration.MCPManager, "list_tools_sync", fake_list_tools_sync)
+    resp = client.post(
+        "/api/mcp/tools",
+        json={"servers": [{"name": "fs", "type": "stdio", "command": "npx"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["tools"] == []
+    assert [s["name"] for s in data["skipped"]] == ["fs"]
+
+
+# ---------------------------------------------------------------------------
+# W3: version reporting & opt-in update check
+# ---------------------------------------------------------------------------
+
+
+def test_version_constant_is_semver():
+    import version
+
+    parts = version.__version__.split(".")
+    assert len(parts) >= 2
+    for p in parts:
+        assert p.isdigit()
+
+
+def test_is_newer_compares_numerically():
+    import updater
+
+    # "1.10.0" is greater than "1.2.0" — string comparison would get this wrong.
+    assert updater._is_newer("1.10.0", "1.2.0") is True
+    assert updater._is_newer("1.2.0", "1.10.0") is False
+    assert updater._is_newer("2.0.0", "1.99.99") is True
+    assert updater._is_newer("1.0.0", "1.0.0") is False
+    # Garbage gracefully degrades to False rather than crashing.
+    assert updater._is_newer("not-a-version", "1.0.0") is False
+
+
+def test_update_check_parses_response(monkeypatch):
+    import updater
+    import version
+
+    canned = {
+        "tag_name": "v9.9.9",
+        "html_url": "https://github.com/foo/bar/releases/tag/v9.9.9",
+    }
+
+    class FakeResp:
+        def __init__(self, body):
+            self._body = body.encode("utf-8")
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(
+        updater.urllib.request, "urlopen", lambda req, timeout=None: FakeResp(json.dumps(canned))
+    )
+    result = updater.check_for_update()
+    assert result["latest"] == "9.9.9"
+    assert result["current"] == version.__version__
+    assert result["url"] == canned["html_url"]
+    # Whether "available" is true depends on the running version; just assert
+    # the boolean type so this test is stable as the version bumps.
+    assert isinstance(result["update_available"], bool)
+
+
+def test_update_check_returns_error_on_failure(monkeypatch):
+    import updater
+
+    def boom(req, timeout=None):
+        raise OSError("network down")
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", boom)
+    result = updater.check_for_update()
+    assert result["update_available"] is False
+    assert "error" in result
+    assert "network down" in result["error"]
+
+
+def test_version_endpoint(client):
+    import version
+
+    resp = client.get("/api/version")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"version": version.__version__}
+
+
+def test_backends_includes_version(client):
+    import version
+
+    resp = client.get("/api/backends")
+    assert resp.status_code == 200
+    assert resp.get_json()["version"] == version.__version__
+
+
+def test_check_update_endpoint(client, monkeypatch):
+    """The endpoint exposes the same payload the module returns."""
+    import updater
+
+    monkeypatch.setattr(updater, "check_for_update", lambda: {
+        "current": "1.2.0",
+        "latest": "1.3.0",
+        "update_available": True,
+        "url": "https://example/release",
+    })
+    resp = client.get("/api/check-update")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["update_available"] is True
+    assert data["url"] == "https://example/release"
+
+
+# ---------------------------------------------------------------------------
+# W4 desktop keyring + model-list caching
+# ---------------------------------------------------------------------------
+
+
+class _FakeKeyring:
+    """In-memory replacement for the ``keyring`` module used in tests."""
+
+    def __init__(self):
+        self.store = {}
+        self.fail_next = False
+
+    def set_password(self, service, key, value):
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError("backend locked")
+        self.store[(service, key)] = value
+
+    def get_password(self, service, key):
+        return self.store.get((service, key))
+
+
+def test_desktop_api_has_keyring_helper():
+    import desktop
+
+    api = desktop.Api()
+    # ``has_keyring`` returns a bool; either True (keyring installed) or False
+    # (not installed) is acceptable — we just want to exercise the branch.
+    assert isinstance(api.has_keyring(), bool)
+
+
+def test_desktop_api_store_and_load_key(monkeypatch):
+    import desktop
+
+    fake = _FakeKeyring()
+
+    class _KR:
+        set_password = fake.set_password
+        get_password = fake.get_password
+
+    monkeypatch.setitem(__import__("sys").modules, "keyring", _KR())
+
+    api = desktop.Api()
+    assert api.store_key("RT_remote_api_key", "sk-test-123") == {
+        "ok": True,
+        "error": None,
+    }
+    loaded = api.load_key("RT_remote_api_key")
+    assert loaded == {"ok": True, "value": "sk-test-123", "error": None}
+
+
+def test_desktop_api_store_key_rejects_empty():
+    import desktop
+
+    api = desktop.Api()
+    result = api.store_key("RT_remote_api_key", "")
+    assert result["ok"] is False
+    assert "Empty" in result["error"]
+
+
+def test_desktop_api_store_key_handles_backend_failure(monkeypatch):
+    import desktop
+
+    fake = _FakeKeyring()
+    fake.fail_next = True
+
+    class _KR:
+        set_password = fake.set_password
+        get_password = fake.get_password
+
+    monkeypatch.setitem(__import__("sys").modules, "keyring", _KR())
+
+    api = desktop.Api()
+    result = api.store_key("RT_remote_api_key", "sk-fail")
+    assert result["ok"] is False
+    assert "locked" in result["error"]
+
+
+def test_desktop_api_load_key_missing_returns_empty(monkeypatch):
+    import desktop
+
+    fake = _FakeKeyring()
+
+    class _KR:
+        set_password = fake.set_password
+        get_password = fake.get_password
+
+    monkeypatch.setitem(__import__("sys").modules, "keyring", _KR())
+
+    api = desktop.Api()
+    loaded = api.load_key("RT_does_not_exist")
+    assert loaded == {"ok": True, "value": "", "error": None}
+
+
+def test_keyring_service_constant_is_namespaced():
+    """Multiple installs on the same machine must not collide."""
+    import desktop
+
+    assert desktop.Api.KEYRING_SERVICE == "ResumeTailor"
