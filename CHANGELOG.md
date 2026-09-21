@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-20
+
+### Added
+- README **Download (Windows)** section with direct links to the latest
+  release executables, plus documentation for the tag-driven release build.
+
 ### Security
 - Client-supplied MCP server config is disabled by default; only
   `MCP_SERVERS` env config is used unless `ALLOW_CLIENT_MCP_SERVERS=1` is set
