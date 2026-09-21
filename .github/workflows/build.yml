@@ -1,4 +1,4 @@
-name: Build Windows executables
+name: Build desktop executables
 
 on:
   push:
@@ -7,24 +7,46 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: Build (${{ matrix.target.os }})
+    runs-on: ${{ matrix.target.os }}
     strategy:
+      fail-fast: false
       matrix:
         target:
-          - name: ResumeTailor (web app)
+          - name: ResumeTailor (web app, Windows)
+            os: windows-latest
             spec: ResumeTailor.spec
             dist: dist
             artifact: ResumeTailor.exe
-          - name: ResumeTailor-Desktop
+          - name: ResumeTailor-Desktop (Windows)
+            os: windows-latest
             spec: Desktop.spec
             dist: dist-desktop
             artifact: ResumeTailor-Desktop.exe
+          - name: ResumeTailor-Desktop (macOS)
+            os: macos-latest
+            spec: Desktop-mac.spec
+            dist: dist-mac
+            artifact: ResumeTailor-Desktop.app
+          - name: ResumeTailor-Desktop (Linux)
+            os: ubuntu-latest
+            spec: Desktop-linux.spec
+            dist: dist-linux
+            artifact: ResumeTailor-Desktop
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Install Linux GTK/WebKit dependencies
+        if: matrix.target.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.0 \
+            libwebkit2gtk-4.0-dev pkg-config
 
       - name: Install dependencies
         run: |
@@ -33,25 +55,67 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          python -m PyInstaller --clean --noconfirm --distpath ${{ matrix.target.dist }} ${{ matrix.target.spec }}
+          python -m PyInstaller --clean --noconfirm \
+            --distpath ${{ matrix.target.dist }} \
+            ${{ matrix.target.spec }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target.artifact }}
+          # For the macOS .app bundle the path is the directory itself.
           path: ${{ matrix.target.dist }}/${{ matrix.target.artifact }}
 
-  release:
+  installer:
     needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows desktop artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ResumeTailor-Desktop.exe
+          path: dist-desktop
+
+      - name: Build Inno Setup installer
+        uses: Minionguyjpro/Inno-Setup-Action@1.2.7
+        with:
+          path: installer.iss
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ResumeTailor-Setup.exe
+          path: output/ResumeTailor-Setup.exe
+
+  release:
+    needs: [build, installer]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Package macOS .app as zip
+        if: hashFiles('artifacts/ResumeTailor-Desktop.app/Info.plist') != ''
+        run: |
+          cd artifacts
+          zip -r ResumeTailor-Desktop-mac.zip ResumeTailor-Desktop.app
+          ls -la
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.exe
+          files: |
+            artifacts/ResumeTailor.exe
+            artifacts/ResumeTailor-Desktop.exe
+            artifacts/ResumeTailor-Desktop-mac.zip
+            artifacts/ResumeTailor-Desktop
+            artifacts/ResumeTailor-Setup.exe

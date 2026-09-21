@@ -11,6 +11,9 @@ const state = {
   activeTab: "resume",
   rssJobs: [],
   cronJobs: [],
+  // Capability flags reported by /api/backends.
+  stdioMcpAvailable: true,
+  appVersion: "",
 };
 
 // Secrets (API keys) must not persist across sessions. Migrate any legacy
@@ -23,13 +26,127 @@ SECRET_KEYS.forEach((k) => {
   localStorage.removeItem(k);
 });
 
+/* ---------- Secret storage (desktop keyring or sessionStorage fallback) ----------
+ * In the desktop app, prefer the OS keyring so keys survive a restart and
+ * are never written to plaintext disk. The browser version falls back to
+ * sessionStorage (cleared on tab close) so the privacy guarantee from the
+ * README still holds when the app is used in a plain browser.
+ */
+const keyStore = (() => {
+  const isDesktop =
+    typeof window !== "undefined" &&
+    window.pywebview &&
+    typeof window.pywebview.api === "object";
+  const usesKeyring = isDesktop && window.pywebview.api.has_keyring
+    ? window.pywebview.api.has_keyring()
+    : false;
+
+  return {
+    isDesktop,
+    usesKeyring,
+    async get(key) {
+      if (usesKeyring) {
+        try {
+          const res = await window.pywebview.api.load_key(key);
+          if (res && res.ok) return res.value || "";
+        } catch {
+          /* fall through to sessionStorage */
+        }
+      }
+      return sessionStorage.getItem(key) || "";
+    },
+    async set(key, value) {
+      if (usesKeyring) {
+        try {
+          const res = await window.pywebview.api.store_key(key, value || "");
+          if (res && res.ok) {
+            // Keep a sessionStorage copy too so a hot-reload before the
+            // keyring finishes doesn't briefly show an empty field.
+            if (value) sessionStorage.setItem(key, value);
+            else sessionStorage.removeItem(key);
+            return true;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+      if (value) sessionStorage.setItem(key, value);
+      else sessionStorage.removeItem(key);
+      return false;
+    },
+  };
+})();
+
 /* ---------- Backend detection ---------- */
+const LSKEY_CACHED_BACKENDS = "RT_cached_backends";
+const BACKEND_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+
+function loadCachedBackends() {
+  // Read the cached model list so the UI is populated instantly while the
+  // /api/backends request is in flight. The cache also serves as a fallback
+  // when the server is briefly unreachable.
+  try {
+    const raw = localStorage.getItem(LSKEY_CACHED_BACKENDS);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.backends)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedBackends(backends) {
+  try {
+    const payload = {
+      fetched_at: new Date().toISOString(),
+      backends,
+    };
+    localStorage.setItem(LSKEY_CACHED_BACKENDS, JSON.stringify(payload));
+  } catch {
+    /* localStorage may be disabled in private mode — silently ignore */
+  }
+}
+
+function renderBackendStatus(backends, opts = {}) {
+  const statusEl = $("backend-status");
+  if (!backends.length) {
+    statusEl.textContent = opts.stale
+      ? "⚠ Cached backends (stale): none detected. Refresh to retry."
+      : "⚠ No LLM backend detected. Start Ollama or configure a remote API.";
+    statusEl.className = "backend-status offline";
+    $("generate-btn").disabled = true;
+    return;
+  }
+  const names = backends.map((b) => b.label).join(" & ");
+  statusEl.textContent = opts.stale
+    ? `⚠ Cached backends (stale): ${names}. Refreshing…`
+    : `✓ Backends: ${names}`;
+  statusEl.className = opts.stale ? "backend-status offline" : "backend-status online";
+}
+
 async function loadBackends() {
   const statusEl = $("backend-status");
+
+  // 1. Render cached backends immediately so the model dropdown is populated
+  //    before the network round-trip completes.
+  const cached = loadCachedBackends();
+  if (cached && cached.backends.length) {
+    state.backends = cached.backends;
+    const ageMs = Date.now() - new Date(cached.fetched_at).getTime();
+    renderBackendStatus(cached.backends, { stale: ageMs > BACKEND_CACHE_MAX_AGE_MS });
+    populateBackendSelect();
+  }
+
+  // 2. Refresh from the server in the background.
   try {
     const res = await fetch("/api/backends");
     const data = await res.json();
     state.backends = data.backends || [];
+    state.stdioMcpAvailable = data.stdio_mcp_available !== false;
+    state.appVersion = data.version || "";
+    const verEl = $("app-version");
+    if (verEl && state.appVersion) verEl.textContent = `v${state.appVersion}`;
 
     // Prefill RSS feed URL from server config if the user hasn't set one.
     if (data.rss_feed_url && !localStorage.getItem(LSKEY_RSS_URL)) {
@@ -37,22 +154,51 @@ async function loadBackends() {
       localStorage.setItem(LSKEY_RSS_URL, data.rss_feed_url);
     }
 
-    if (!state.backends.length) {
-      statusEl.textContent = "⚠ No LLM backend detected. Start Ollama or configure a remote API.";
-      statusEl.className = "backend-status offline";
-      $("generate-btn").disabled = true;
-      populateBackendSelect();
-      return;
-    }
-
-    const names = state.backends.map((b) => b.label).join(" & ");
-    statusEl.textContent = `✓ Backends: ${names}`;
-    statusEl.className = "backend-status online";
+    saveCachedBackends(state.backends);
+    renderBackendStatus(state.backends);
     populateBackendSelect();
+    await maybeShowSetupBanner();
   } catch (err) {
-    statusEl.textContent = "⚠ Could not reach the app server.";
-    statusEl.className = "backend-status offline";
+    if (!cached) {
+      statusEl.textContent = "⚠ Could not reach the app server.";
+      statusEl.className = "backend-status offline";
+    }
+    // If we had a cache, keep showing it as a fallback (already rendered above).
   }
+}
+
+/* ---------- First-run setup banner ---------- */
+async function maybeShowSetupBanner() {
+  // No local backends detected AND no remote API key entered yet — nudge the
+  // user toward one of the three setup paths. The banner is dismissible and
+  // remembers the dismissal in localStorage so it only shows once.
+  const dismissed = localStorage.getItem("RT_setup_banner_dismissed") === "1";
+  if (dismissed) return;
+  const remoteKey = await keyStore.get("RT_remote_api_key");
+  const hasRemoteKey =
+    (state.backends || []).some((b) => b.needs_api_key) && remoteKey.length > 0;
+  const hasLocalBackend = (state.backends || []).some((b) => !b.needs_api_key);
+  if (hasLocalBackend || hasRemoteKey) return;
+
+  let banner = $("setup-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "setup-banner";
+    banner.className = "setup-banner";
+    document.querySelector("main.layout")?.prepend(banner);
+  }
+  banner.innerHTML = `
+    <strong>No local LLM found.</strong>
+    Install <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a>
+    and run <code>ollama pull hermes3:8b</code>,
+    start LM Studio's local server,
+    or paste an OpenRouter key in Settings.
+    <button class="setup-dismiss" type="button">✕</button>
+  `;
+  banner.querySelector(".setup-dismiss").onclick = () => {
+    localStorage.setItem("RT_setup_banner_dismissed", "1");
+    banner.remove();
+  };
 }
 
 function populateBackendSelect() {
@@ -73,9 +219,10 @@ function populateBackendSelect() {
 
   sel.addEventListener("change", onBackendChange);
   onBackendChange();
+  return Promise.resolve();
 }
 
-function onBackendChange() {
+async function onBackendChange() {
   const sel = $("backend-select");
   const backend = state.backends.find((b) => b.id === sel.value);
   if (!backend) return;
@@ -86,7 +233,7 @@ function onBackendChange() {
   const keyBox = $("remote-api-key-box");
   if (backend.needs_api_key) {
     keyBox.classList.remove("hidden");
-    const savedApiKey = sessionStorage.getItem("RT_remote_api_key") || "";
+    const savedApiKey = await keyStore.get("RT_remote_api_key");
     $("remote-api-key").value = savedApiKey;
   } else {
     keyBox.classList.add("hidden");
@@ -133,7 +280,7 @@ $("fetch-models-btn").addEventListener("click", async () => {
     $("models-fetch-status").textContent = "Enter an API key first.";
     return;
   }
-  sessionStorage.setItem("RT_remote_api_key", apiKey);
+  await keyStore.set("RT_remote_api_key", apiKey);
   $("models-fetch-status").textContent = "Fetching…";
   $("fetch-models-btn").disabled = true;
 
@@ -164,6 +311,38 @@ $("fetch-models-btn").addEventListener("click", async () => {
 $("model-select").addEventListener("change", () => {
   state.model = $("model-select").value;
   localStorage.setItem("RT_model", state.model);
+});
+
+/* ---------- Update check ---------- */
+$("check-update-btn").addEventListener("click", async () => {
+  const btn = $("check-update-btn");
+  const status = $("update-status");
+  btn.disabled = true;
+  status.textContent = "Checking…";
+  status.style.color = "";
+  try {
+    const res = await fetch("/api/check-update");
+    const data = await res.json();
+    if (data.error) {
+      status.textContent = `Could not check: ${data.error}`;
+      status.style.color = "#f87171";
+      return;
+    }
+    if (data.update_available) {
+      status.innerHTML =
+        `v${data.latest} available — ` +
+        `<a href="${data.url}" target="_blank" rel="noopener">download</a>`;
+      status.style.color = "#34d399";
+    } else {
+      status.textContent = `✓ You have the latest version (v${data.current}).`;
+      status.style.color = "#34d399";
+    }
+  } catch (err) {
+    status.textContent = "Update check failed: " + err.message;
+    status.style.color = "#f87171";
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 /* ---------- File upload ---------- */
@@ -499,7 +678,9 @@ const $researchApiKey = $("research-api-key");
 // Restore
 $researchMode.value = localStorage.getItem(LSKEY_RESEARCH_MODE) || "";
 $researchProvider.value = localStorage.getItem(LSKEY_SEARCH_PROVIDER) || "tavily";
-$researchApiKey.value = sessionStorage.getItem(LSKEY_SEARCH_APIKEY) || "";
+keyStore.get(LSKEY_SEARCH_APIKEY).then((v) => {
+  $researchApiKey.value = v;
+});
 onResearchModeChange();
 
 $researchMode.addEventListener("change", onResearchModeChange);
@@ -507,7 +688,7 @@ $researchProvider.addEventListener("change", () =>
   localStorage.setItem(LSKEY_SEARCH_PROVIDER, $researchProvider.value)
 );
 $researchApiKey.addEventListener("input", () =>
-  sessionStorage.setItem(LSKEY_SEARCH_APIKEY, $researchApiKey.value)
+  keyStore.set(LSKEY_SEARCH_APIKEY, $researchApiKey.value)
 );
 
 function onResearchModeChange() {
@@ -566,6 +747,13 @@ $("mcp-add-btn").addEventListener("click", () => {
     setStatus("MCP: provide a name and URL/command.", "error");
     return;
   }
+  if (type === "stdio" && !state.stdioMcpAvailable) {
+    setStatus(
+      "stdio MCP servers require Node.js installed. HTTP MCP servers work without it.",
+      "error"
+    );
+    return;
+  }
   const server = { name, type };
   if (type === "stdio") {
     const parts = url.split(/\s+/);
@@ -597,11 +785,27 @@ $("mcp-list-tools-btn").addEventListener("click", async () => {
     });
     const data = await res.json();
     const tools = data.tools || [];
+    const skipped = data.skipped || [];
     if (!tools.length) {
-      $("mcp-tools").textContent = data.error || "No tools found.";
+      let msg = data.error || "No tools found.";
+      if (skipped.length) {
+        msg +=
+          "\nSkipped stdio server(s) (Node.js not installed): " +
+          skipped.map((s) => s.name).join(", ");
+      }
+      $("mcp-tools").textContent = msg;
       return;
     }
     $("mcp-tools").innerHTML = "";
+    if (skipped.length) {
+      const warn = document.createElement("div");
+      warn.className = "hint";
+      warn.style.color = "#f87171";
+      warn.textContent =
+        "Skipped stdio server(s) (Node.js not installed): " +
+        skipped.map((s) => s.name).join(", ");
+      $("mcp-tools").appendChild(warn);
+    }
     tools.forEach((t) => {
       const div = document.createElement("div");
       div.className = "tool";

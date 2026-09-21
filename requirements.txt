@@ -7,6 +7,10 @@ pywebview>=5.0
 pystray>=0.19
 Pillow>=10.0
 pyinstaller>=6.0
+# Optional desktop-only dependency for storing API keys in the OS keyring.
+# Falls back to sessionStorage in the browser when not present (e.g. when
+# running as a web app or in a headless CI runner).
+keyring>=24
 
 # Development / testing
 pytest>=8.0

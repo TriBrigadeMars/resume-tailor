@@ -57,8 +57,12 @@ class Api:
     """Python API exposed to the webview JS via window.pywebview.api.
 
     Lets the desktop UI save generated documents using a native save dialog,
-    which is far more reliable than blob-URL downloads inside WebView2.
+    which is far more reliable than blob-URL downloads inside WebView2, and
+    persist API keys via the OS keyring so they survive a restart without
+    ever being written to a plaintext file.
     """
+
+    KEYRING_SERVICE = "ResumeTailor"
 
     def save_document(self, content: str, doc_type: str, fmt: str) -> dict:
         import io
@@ -107,6 +111,51 @@ class Api:
             return {"saved": False, "message": f"Could not write file: {exc}"}
         return {"saved": True, "path": filename}
 
+    # ---- Keyring-backed secret storage (desktop only) ----
+
+    def store_key(self, key: str, value: str) -> dict:
+        """Persist ``value`` under ``key`` in the OS keyring.
+
+        Returns ``{"ok": bool, "error": str|None}``. The frontend falls back
+        to ``sessionStorage`` when ``ok`` is False (e.g. ``keyring`` is not
+        installed or the host has no compatible backend, which is rare but
+        documented).
+        """
+        if not value:
+            return {"ok": False, "error": "Empty value"}
+        try:
+            import keyring
+        except ImportError:
+            return {"ok": False, "error": "keyring module not available"}
+        try:
+            keyring.set_password(self.KEYRING_SERVICE, key, value)
+            return {"ok": True, "error": None}
+        except Exception as exc:  # noqa: BLE001 - any backend failure
+            return {"ok": False, "error": str(exc)}
+
+    def load_key(self, key: str) -> dict:
+        """Retrieve ``value`` previously stored via :meth:`store_key`.
+
+        Returns ``{"ok": bool, "value": str, "error": str|None}``.
+        """
+        try:
+            import keyring
+        except ImportError:
+            return {"ok": False, "value": "", "error": "keyring module not available"}
+        try:
+            value = keyring.get_password(self.KEYRING_SERVICE, key) or ""
+            return {"ok": True, "value": value, "error": None}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "value": "", "error": str(exc)}
+
+    def has_keyring(self) -> bool:
+        """Whether the OS keyring is available at runtime."""
+        try:
+            import keyring  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
 
 class ResumeTailorDesktop:
     def __init__(self):
@@ -149,7 +198,14 @@ class ResumeTailorDesktop:
         self.window.events.closing += self._on_closing
         self.window.events.minimized += self._on_minimized
 
-        webview.start(gui="edgechromium")
+        # pywebview's GUI selector is platform-specific: edgechromium only
+        # exists on Windows (WebView2); macOS uses Cocoa by default and
+        # Linux needs GTK explicitly so we don't accidentally fall back to
+        # the Qt backend.
+        gui = {"win32": "edgechromium", "darwin": None, "linux": "gtk"}.get(
+            sys.platform
+        )
+        webview.start(gui=gui)
 
     # ---- Flask backend ----
 

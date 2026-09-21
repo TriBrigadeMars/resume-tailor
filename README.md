@@ -11,33 +11,42 @@ tools** the LLM can call while generating, and **RSS job feeds** to load
 opportunities in-app.
 
 > **Privacy note:** your API keys (OpenRouter, LM Studio, search providers) are
-> kept only in the browser's `sessionStorage` and sent to the app's local server
-> at request time. They are **never written to disk**. A key leaves your machine
-> only when the feature using it contacts the remote provider you selected (for
-> example OpenRouter or a web-search provider).
+> kept only in the browser's `sessionStorage` (or, in the desktop app, in your
+> OS keyring) and sent to the app's local server at request time. They are
+> **never written to disk in plaintext**. A key leaves your machine only when
+> the feature using it contacts the remote provider you selected (for example
+> OpenRouter or a web-search provider).
 
 ---
 
-## ⬇️ Download (Windows)
+## ⬇️ Download
 
-**No Python, no install, no setup** — grab a single-file `.exe` from the
+**No Python, no install, no setup** — grab a single-file binary for your
+platform from the
 **[latest release](https://github.com/TriBrigadeMars/resume-tailor/releases/latest)**,
 double-click it, and the app runs locally:
 
-| Download | Description |
-|----------|-------------|
-| [**`ResumeTailor-Desktop.exe`**](https://github.com/TriBrigadeMars/resume-tailor/releases/latest/download/ResumeTailor-Desktop.exe) | **Recommended** — native window + system tray, no browser needed |
-| [`ResumeTailor.exe`](https://github.com/TriBrigadeMars/resume-tailor/releases/latest/download/ResumeTailor.exe) | Web app — starts a local server and opens your browser |
+| Platform | Download | Notes |
+|----------|----------|-------|
+| **Windows** | [`ResumeTailor-Setup.exe`](https://github.com/TriBrigadeMars/resume-tailor/releases/latest) *(recommended — installer)* or [`ResumeTailor-Desktop.exe`](https://github.com/TriBrigadeMars/resume-tailor/releases/latest/download/ResumeTailor-Desktop.exe) *(single-file)* | Native window + system tray. SmartScreen may warn about an unsigned binary — click **More info → Run anyway**. |
+| **macOS** | `ResumeTailor-Desktop-mac.zip` (unzip and drag the `.app` to `/Applications`) | Right-click → **Open** the first time to satisfy Gatekeeper. |
+| **Linux** | `ResumeTailor-Desktop` (single-file binary) | Requires GTK3 + WebKit2 (`apt install python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.0`). |
 
-Both are self-contained executables: everything (Python runtime, backend, and
-UI) is bundled inside the one file, so nothing else needs to be installed.
+The web app variant (`ResumeTailor.exe` for Windows) starts a local server and
+opens your browser — pick that if you don't want a native window.
 
-> **First-run note:** Windows SmartScreen may warn about an unsigned binary.
-> Click **More info → Run anyway** to start the app.
->
+All binaries are self-contained: everything (Python runtime, backend, and UI)
+is bundled inside the one file, so nothing else needs to be installed beyond
+the host-specific deps listed above.
+
 > The app is a *local* UI — you still point it at an LLM backend you control
 > (Ollama or LM Studio running on your machine, or an OpenRouter API key).
 > See [Requirements](#-requirements) below.
+
+**In-app updates:** the desktop app shows the running version in the
+bottom-right corner of the UI; click **Check for updates** to compare
+against the latest GitHub release. The check is opt-in and never
+auto-downloads.
 
 ---
 
@@ -98,7 +107,8 @@ python desktop.py
 ```
 
 On Windows you can also double-click **`launch_desktop.bat`** to start the
-desktop GUI without opening a terminal.
+desktop GUI without opening a terminal. On macOS / Linux use
+**`launch_desktop.sh`**.
 
 ## 🐨 Run with Docker
 
@@ -116,31 +126,41 @@ By default the container's port is published **loopback-only**
 LAN access, change the port binding to `8000:8000` in `docker-compose.yml` and
 be aware the app will be exposed on your network without authentication.
 
-## 🖥️ Run the Windows executables
+## 🖥️ Run the desktop executables
 
-Two pre-built executables are available (see **Releases** or build from source):
+Pre-built binaries are available (see **Releases** or build from source):
 
-| Executable | Description |
-|------------|-------------|
-| `ResumeTailor.exe` | Web app — opens in your browser |
-| `ResumeTailor-Desktop.exe` | Native window + system tray (no browser) |
+| Executable | Platform | Description |
+|------------|----------|-------------|
+| `ResumeTailor.exe` | Windows | Web app — opens in your browser |
+| `ResumeTailor-Desktop.exe` | Windows | Native window + system tray (no browser) |
+| `ResumeTailor-Setup.exe` | Windows | Inno Setup installer for `ResumeTailor-Desktop` |
+| `ResumeTailor-Desktop-mac.zip` | macOS | Unzip, drag the `.app` to `/Applications` |
+| `ResumeTailor-Desktop` | Linux | Single-file binary (GTK3 + WebKit2 required) |
 
 Rebuild after code changes:
 
 ```bash
-# Web app
+# Windows web app
 .venv\Scripts\pyinstaller --clean --noconfirm ResumeTailor.spec
 
-# Desktop app
+# Windows desktop
 .venv\Scripts\pyinstaller --clean --noconfirm --distpath dist-desktop Desktop.spec
+
+# macOS desktop (produces a .app bundle)
+pyinstaller --clean --noconfirm Desktop-mac.spec
+
+# Linux desktop
+pyinstaller --clean --noconfirm Desktop-linux.spec
 ```
 
 ### Cutting a release
 
 Releases are produced automatically by GitHub Actions
 ([`.github/workflows/build.yml`](.github/workflows/build.yml)). Push a version
-tag and CI builds both executables on `windows-latest` and attaches them to a
-new GitHub Release:
+tag and CI builds binaries for Windows, macOS, and Linux, assembles the
+Windows installer from [`installer.iss`](installer.iss), and attaches them to
+a new GitHub Release:
 
 ```bash
 git tag v1.1.0
@@ -148,8 +168,8 @@ git push origin v1.1.0
 ```
 
 You can also trigger the build manually from the **Actions** tab
-(`workflow_dispatch`) to download the executables as workflow artifacts
-without publishing a release.
+(`workflow_dispatch`) to download the binaries as workflow artifacts without
+publishing a release.
 
 ---
 
@@ -168,6 +188,11 @@ resume-tailor/
 ├── app.py                 # Flask backend (API + routes)
 ├── desktop.py             # Desktop launcher (pywebview + pystray)
 ├── launch_desktop.bat     # Windows launcher for the desktop GUI
+├── launch_desktop.sh      # macOS / Linux launcher for the desktop GUI
+├── installer.iss          # Inno Setup script for the Windows installer
+├── nodecheck.py           # Node.js / npx detection (graceful MCP fallback)
+├── version.py             # Single source of truth for __version__
+├── updater.py             # Opt-in GitHub Releases update check
 ├── llm.py                 # LLM client (Ollama / LM Studio / OpenRouter)
 ├── docgen.py              # Markdown → .docx conversion
 ├── search.py              # Web search clients (Tavily / Brave / SerpAPI)

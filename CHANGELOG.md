@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-20
+
+### Added
+- **Cross-platform desktop builds** (Part A of the standalone-distribution
+  guide). CI now builds the desktop GUI on Windows, macOS, and Linux in
+  parallel, producing `ResumeTailor-Desktop.exe` (Windows single-file),
+  `ResumeTailor-Desktop.app` (macOS bundle, distributed as a `.zip`),
+  and `ResumeTailor-Desktop` (Linux single-file). Specs: `Desktop.spec`,
+  `Desktop-mac.spec`, `Desktop-linux.spec`.
+- **Windows installer** built from `installer.iss` by the new
+  `installer` CI job; the release artifacts now include
+  `ResumeTailor-Setup.exe`.
+- **`launch_desktop.sh`** sibling of `launch_desktop.bat` for macOS/Linux.
+- **macOS / Linux / Inno Setup documentation** in the README Download
+  section, plus an updated "Run the desktop executables" table.
+- **`/api/version` and `/api/check-update` endpoints**. `version.py` is
+  the single source of truth for `__version__`; `updater.py` does an
+  opt-in check against the GitHub Releases API (numeric semver compare,
+  so `1.10.0` is correctly detected as newer than `1.2.0`).
+- **Version row in the UI** shows the running version and a
+  "Check for updates" button.
+- **Node.js / npx detection** (`nodecheck.py`). When `npx` is
+  unavailable (e.g. on the frozen binary), `MCPManager` filters out
+  stdio MCP servers and surfaces them as `skipped` in
+  `/api/mcp/tools`. `/api/backends` reports `stdio_mcp_available`.
+- **First-run setup banner** in the UI when no local backends are
+  detected and no remote API key has been entered; dismissable,
+  remembered in `localStorage`.
+- **Desktop keyring integration**. The desktop app now persists API
+  keys via the OS keyring (via the `keyring` package) through new
+  `Api.store_key` / `Api.load_key` / `Api.has_keyring` methods. The
+  browser version still uses `sessionStorage`, so the privacy
+  guarantee from the README is preserved for non-desktop users.
+- **Model-list cache**: a successful `/api/backends` response is
+  cached in `localStorage` under `RT_cached_backends` (24h TTL) and
+  rendered immediately on startup so the UI is populated before the
+  network round-trip completes.
+
+### Changed
+- `MCPManager.list_tools_sync()` now returns
+  `(tools, error, skipped_servers)` (3-tuple) so callers can warn
+  the user about servers that were filtered.
+- `webview.start(gui=...)` is now platform-aware
+  (`win32` → `edgechromium`, `darwin` → `None`, `linux` → `gtk`),
+  so the same `desktop.py` works on all three platforms.
+
 ## [1.1.0] - 2026-09-20
 
 ### Added

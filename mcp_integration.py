@@ -23,6 +23,7 @@ import json
 import os
 
 import llm
+import nodecheck
 
 try:
     from mcp import ClientSession, StdioServerParameters
@@ -60,7 +61,13 @@ class MCPManager:
     """Connects to MCP servers and exposes their tools to the LLM."""
 
     def __init__(self, servers: list[dict]):
-        self.servers = servers or []
+        # stdio servers that require ``npx`` are filtered out up front when
+        # Node.js is not installed, so the manager never tries to launch a
+        # command the host can't run. The skipped list is exposed so callers
+        # can surface a per-server warning to the user instead of failing.
+        supported, skipped = nodecheck.stdio_mcp_supported(servers)
+        self.servers = supported
+        self.skipped_servers = skipped
         self._exit_stack = contextlib.AsyncExitStack()
         self._sessions: dict[str, ClientSession] = {}
 
@@ -131,18 +138,25 @@ class MCPManager:
 
     # ---- single-coroutine public API ----
 
-    def list_tools_sync(self) -> tuple[list[dict], str]:
-        """Connect, list tools, close. Returns (tools, error)."""
+    def list_tools_sync(self) -> tuple[list[dict], str, list[dict]]:
+            """Connect, list tools, close.
 
-        async def _run():
-            async with self._exit_stack:
-                await self.connect_all()
-                return await self.list_tools()
+            Returns ``(tools, error, skipped_servers)``. ``skipped_servers`` is the
+            subset of the original config that was filtered out because ``npx``
+            was unavailable; the UI uses it to show per-server warnings without
+            failing the whole listing.
+            """
 
-        try:
-            return asyncio.run(_run()), ""
-        except Exception as exc:  # noqa: BLE001
-            return [], str(exc)
+            async def _run():
+                async with self._exit_stack:
+                    await self.connect_all()
+                    return await self.list_tools()
+
+            try:
+                tools = asyncio.run(_run())
+            except Exception as exc:  # noqa: BLE001
+                return [], str(exc), list(self.skipped_servers)
+            return tools, "", list(self.skipped_servers)
 
     def run_tool_loop(
         self,
@@ -166,7 +180,10 @@ class MCPManager:
                 await self.connect_all()
                 tools = await self.list_tools()
                 if not tools:
-                    return None
+                            # No supported tools (and possibly some skipped). The caller
+                            # is expected to check ``manager.skipped_servers`` for
+                            # per-server reasons; we just report "no tools" here.
+                            return None
                 current = list(messages)
                 final_content = ""
                 for _ in range(max_iterations):
