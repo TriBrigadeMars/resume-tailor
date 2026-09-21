@@ -198,7 +198,14 @@ class ResumeTailorDesktop:
         self.window.events.closing += self._on_closing
         self.window.events.minimized += self._on_minimized
 
-        webview.start(gui="edgechromium")
+        # pywebview's GUI selector is platform-specific: edgechromium only
+        # exists on Windows (WebView2); macOS uses Cocoa by default and
+        # Linux needs GTK explicitly so we don't accidentally fall back to
+        # the Qt backend.
+        gui = {"win32": "edgechromium", "darwin": None, "linux": "gtk"}.get(
+            sys.platform
+        )
+        webview.start(gui=gui)
 
     # ---- Flask backend ----
 
