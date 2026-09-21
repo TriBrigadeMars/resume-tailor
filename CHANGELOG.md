@@ -42,6 +42,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `job_hunting_feed.py` Hermes cron script that writes an accumulated JSON feed
   of job postings (reuses the consolidated job monitor sources).
 
+### Changed
+- Refactored `llm.py` so backend lookup, auth headers, models/chat URLs, and
+  model-list parsing each live in one shared helper instead of being duplicated
+  across `detect_backends`, `list_models`, `chat_completion`, and
+  `chat_with_tools`.
+- Restructured `search.py` around a single `SEARCH_PROVIDERS` registry: each
+  provider now declares one `build(api_key, query) -> (request, extractor)`
+  entry, replacing the `$QUERY`/`$KEY` string substitution, the never-called
+  `get_url` lambdas, and the duplicated Brave/fallback branches.
+- Collapsed the near-identical web-research and LLM-research blocks in
+  `/api/generate` into one branch, and made "web research with no API key
+  configured" an explicit skip message rather than a silent no-op.
+- Moved `_html_to_text` into `htmltext.py` and `_find_free_port` into
+  `portutils.py` (previously byte-identical copies in `app.py` and
+  `desktop.py`). `/api/preview` now uses the shared SSRF-safe fetch defaults
+  and truncates the preview text exactly once.
+- Removed the unused `requests` dependency from `requirements.txt` (nothing
+  imports it; all HTTP goes through `urllib`), the unused `BytesIO` import in
+  `desktop.py`, the duplicate local `json as _json` imports in `app.py`, and
+  the dead `#auto-status` element from `templates/index.html`.
+
+### Fixed
+- MCP tool-loop failures are no longer swallowed: `run_tool_loop` previously
+  returned `None` both when no MCP tools existed and when the MCP session
+  crashed, so a broken server was silently treated as "no tools available" and
+  the request quietly fell back to a tool-less answer. It now raises
+  `RuntimeError`, which surfaces as an error instead of degrading silently.
+- The MCP server list in the UI showed `undefined` for stdio servers (they have
+  `command`/`args`, not `url`); it now renders the full command line.
+- `docgen` treated any line starting with `#` as a heading, so `#notaheading`
+  became a Heading 1 and had its leading `#` stripped. Heading detection now
+  requires one to six `#` followed by whitespace, matching the ATX rule already
+  used by the client-side renderer.
+
 ## [1.0.0] - 2026-08-22
 
 ### Added

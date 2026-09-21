@@ -156,7 +156,9 @@ class MCPManager:
         """Connect, run an agentic tool-calling loop, close.
 
         Returns the final LLM content, or None if no MCP tools were available
-        (caller should fall back to plain generation).
+        (caller should fall back to plain generation). Raises RuntimeError if
+        the MCP session itself failed, so callers never mistake a broken
+        server for an absent one.
         """
 
         async def _run():
@@ -197,5 +199,4 @@ class MCPManager:
         try:
             return asyncio.run(_run())
         except Exception as exc:  # noqa: BLE001
-            print(f"MCP: tool loop failed: {exc}")
-            return None
+            raise RuntimeError(f"MCP tool loop failed: {exc}") from exc

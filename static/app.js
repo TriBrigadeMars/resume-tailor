@@ -537,7 +537,10 @@ function renderMcpServers() {
   mcpServers.forEach((s, i) => {
     const div = document.createElement("div");
     div.className = "mcp-server";
-    div.innerHTML = `<span><strong>${escapeHtml(s.name)}</strong> (${s.type}) — ${escapeHtml(s.url)}</span>`;
+    const target = s.type === "stdio"
+      ? [s.command, ...(s.args || [])].join(" ")
+      : s.url;
+    div.innerHTML = `<span><strong>${escapeHtml(s.name)}</strong> (${s.type}) — ${escapeHtml(target)}</span>`;
     const rm = document.createElement("button");
     rm.className = "rm";
     rm.textContent = "✕";

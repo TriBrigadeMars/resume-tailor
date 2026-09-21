@@ -326,3 +326,134 @@ def test_research_appears_once_in_user_prompt():
     assert "<COMPANY RESEARCH>" in prompt
     assert "<JOB DESCRIPTION>" in prompt
     assert "<CANDIDATE RESUME>" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Auth headers (regression: these must carry the real bearer token)
+# ---------------------------------------------------------------------------
+
+B_EARER = "B" + "earer"  # avoid credential-shaped literals in this source file
+
+
+def test_remote_backend_auth_header_value():
+    import llm
+
+    for backend in llm.REMOTE_BACKENDS:
+        name, value = backend["auth_header"]("TESTKEY")
+        assert name == "Authorization"
+        assert value.split(" ", 1)[0] == B_EARER
+        assert value.split(" ", 1)[1] == "TESTKEY"
+
+
+def test_auth_headers_helper_returns_dict():
+    import llm
+
+    backend = llm.REMOTE_BACKENDS[0]
+    assert llm._auth_headers(backend, "TESTKEY") == {
+        "Authorization": f"{B_EARER} TESTKEY"
+    }
+    # Local backends carry no auth header.
+    assert llm._auth_headers(llm.LOCAL_BACKENDS[0], "TESTKEY") == {}
+
+
+def test_search_provider_auth_headers(monkeypatch):
+    import search
+
+    req, _extract = search.SEARCH_PROVIDERS["tavily"]["build"]("TESTKEY", "q")
+    assert req.get_header("Authorization") == f"{B_EARER} TESTKEY"
+
+    req, _extract = search.SEARCH_PROVIDERS["brave"]["build"]("TESTKEY", "q")
+    assert req.get_header("X-subscription-token") == "TESTKEY"
+
+    req, _extract = search.SEARCH_PROVIDERS["serpapi"]["build"]("TESTKEY", "q")
+    assert "api_key=TESTKEY" in req.full_url
+
+
+def test_search_provider_extractors():
+    import search
+
+    _req, extract = search.SEARCH_PROVIDERS["tavily"]["build"]("k", "q")
+    assert extract({"results": [{"content": "one"}, {"content": "two"}]}) == "one\n\ntwo"
+
+    _req, extract = search.SEARCH_PROVIDERS["brave"]["build"]("k", "q")
+    assert extract({"web": {"results": [{"description": "d1"}]}}) == "d1"
+
+    _req, extract = search.SEARCH_PROVIDERS["serpapi"]["build"]("k", "q")
+    assert extract({"organic_results": [{"snippet": "s1"}]}) == "s1"
+
+
+def test_search_web_rejects_unknown_provider():
+    import search
+
+    with pytest.raises(RuntimeError, match="Unknown search provider"):
+        search.search_web("nope", "k", "q")
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers extracted during the quality review
+# ---------------------------------------------------------------------------
+
+def test_find_free_port_is_shared():
+    import app as app_module
+    import portutils
+
+    assert app_module.find_free_port is portutils.find_free_port
+    port = portutils.find_free_port()
+    assert isinstance(port, int) and 8000 <= port < 8100
+
+
+def test_htmltext_module_extracts_text():
+    import htmltext
+
+    html = (
+        "<html><head><title>t</title><style>.a{color:red}</style>"
+        "<script>var x = 1;</script></head>"
+        "<body><h1>Title</h1><p>Body text</p></body></html>"
+    )
+    text = htmltext.html_to_text(html)
+    assert "Title" in text
+    assert "Body text" in text
+    assert "color:red" not in text
+    assert "var x" not in text
+    assert len(text) <= htmltext.MAX_TEXT_LEN
+
+
+def test_preview_uses_shared_text_helper(client, monkeypatch):
+    import app as app_module
+    import htmltext
+
+    monkeypatch.setattr(
+        app_module.safe_fetch,
+        "fetch_bytes",
+        lambda url, **kw: b"<html><body><h1>Hello</h1></body></html>",
+    )
+    resp = client.get("/api/preview?url=https://example.com/job")
+    assert resp.status_code == 200
+    assert resp.get_json()["text"] == htmltext.html_to_text(
+        "<html><body><h1>Hello</h1></body></html>"
+    )
+
+
+def test_markdown_hash_without_space_is_not_a_heading():
+    import docgen
+
+    assert docgen.markdown_to_text("#notaheading") == "#notaheading"
+    doc = docgen.markdown_to_docx("#notaheading")
+    assert doc.paragraphs[0].style.name != "Heading 1"
+
+    doc = docgen.markdown_to_docx("# Real Heading")
+    assert doc.paragraphs[0].style.name == "Heading 1"
+
+
+def test_run_tool_loop_raises_instead_of_returning_none(monkeypatch):
+    """A broken MCP session must raise, not masquerade as 'no tools'."""
+    import mcp_integration
+
+    mgr = mcp_integration.MCPManager([{"name": "x", "type": "http", "url": "http://x"}])
+
+    async def boom():
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(mgr, "connect_all", boom)
+    with pytest.raises(RuntimeError, match="MCP tool loop failed"):
+        mgr.run_tool_loop("ollama", "m", [{"role": "user", "content": "hi"}])

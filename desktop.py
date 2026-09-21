@@ -13,7 +13,6 @@ import sys
 import threading
 import time
 import webbrowser
-from io import BytesIO
 
 import webview
 import pystray
@@ -24,19 +23,7 @@ from urllib.error import URLError
 # Import the Flask app (will be spawned inside this process)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app  # noqa: E402
-
-
-def _find_free_port(start: int = 8000, tries: int = 10) -> int:
-    import socket
-
-    for port in range(start, start + tries):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    raise RuntimeError("No free port found in range.")
+from portutils import find_free_port  # noqa: E402
 
 
 def _load_tray_icon() -> Image.Image:
@@ -132,7 +119,7 @@ class ResumeTailorDesktop:
 
     def run(self) -> None:
         """Main entry point: start backend → tray → webview window."""
-        self.port = _find_free_port()
+        self.port = find_free_port()
         self.url = f"http://localhost:{self.port}"
 
         # Start Flask in a background daemon thread
